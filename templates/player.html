@@ -1,0 +1,37 @@
+<!-- localfs/templates/player.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playing: {{ filename }}</title>
+    <!-- Link to Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center h-screen font-sans">
+
+    <!-- Header Section -->
+    <header class="w-full max-w-6xl px-4 py-2">
+        <!-- Back button that preserves the API key in the URL -->
+        <a href="{{ url_for('index', key=request.args.get('key')) }}" class="text-blue-400 hover:text-blue-300">
+            &larr; Back to Library
+        </a>
+        <h1 class="text-2xl font-bold truncate mt-2" title="{{ filename }}">{{ filename }}</h1>
+    </header>
+
+    <!-- Video Player Container -->
+    <div class="w-full max-w-6xl p-4 flex-grow">
+        <video
+            controls
+            autoplay
+            preload="auto"
+            class="w-full h-full rounded-lg shadow-2xl bg-black">
+            <!-- The source of the video is our /media/ route -->
+            <source src="{{ url_for('serve_media', filename=filename) }}" type="video/mp4">
+            <!-- Fallback message if the browser can't play the video -->
+            Your browser does not support the video tag. MKV files may not play in all browsers; consider downloading.
+        </video>
+    </div>
+
+</body>
+</html>
