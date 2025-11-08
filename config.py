@@ -14,7 +14,7 @@ DATA_FILE = "localfs-data.json"
 THUMBNAIL_FOLDER = os.path.join("static", "thumbnails") # Path for generated video thumbnails.
 
 # --- File Sharing Settings ---
-ALLOWED_EXTENSIONS = ".mkv"
+ALLOWED_EXTENSIONS = ".mkv .mp4 .mp3"
 
 # --- Security & API Settings ---
 # A secure, random key for accessing the API endpoint AND the website.
