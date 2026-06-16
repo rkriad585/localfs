@@ -40,7 +40,13 @@ class TestConfigValues:
         assert config.THUMBNAIL_FOLDER == os.path.join(config.BASE_DIR, "thumbnails")
 
     def test_allowed_extensions(self):
-        assert config.ALLOWED_EXTENSIONS == ".mkv .mp4 .mp3"
+        exts = config.ALLOWED_EXTENSIONS.split()
+        assert ".mp4" in exts
+        assert ".mkv" in exts
+        assert ".mp3" in exts
+        assert ".avi" in exts
+        assert ".mov" in exts
+        assert len(exts) >= 15
 
     def test_api_key_is_generated(self):
         assert len(config.API_KEY) == 32

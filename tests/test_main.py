@@ -221,6 +221,16 @@ class TestLogActivity:
         data = json.loads(Path(log_path).read_text())
         assert "ip_address" in data[0]
 
+    def test_creates_data_dir_if_missing(self, test_config, client, tmp_path):
+        new_data = tmp_path / "nonexistent" / "data"
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(config, "DATA_FOLDER", str(new_data))
+        with client.application.test_request_context():
+            main.log_activity("test", {})
+        assert os.path.isdir(new_data)
+        assert os.path.isfile(new_data / config.DATA_FILE)
+        monkeypatch.undo()
+
 
 class TestGenerateThumbnail:
     def test_returns_none_when_file_missing(self, test_config, media_dir, thumb_dir):
@@ -629,6 +639,13 @@ class TestServerSideSearch:
         assert "large.txt" in html
         assert "small.txt" not in html
         assert "medium.txt" not in html
+
+
+class TestFaviconRoute:
+    def test_favicon_returns_svg(self, client, test_config):
+        resp = client.get("/favicon.ico")
+        assert resp.status_code == 200
+        assert resp.content_type.startswith("image/svg+xml")
 
 
 class TestThumbnailRoute:

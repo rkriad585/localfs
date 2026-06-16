@@ -32,7 +32,7 @@ DATA_FILE = "localfs-data.json"
 THUMBNAIL_FOLDER = os.path.join(BASE_DIR, "thumbnails")
 
 # --- File Sharing Settings ---
-ALLOWED_EXTENSIONS = ".mkv .mp4 .mp3"
+ALLOWED_EXTENSIONS = ".mkv .mp4 .mp3 .avi .mov .webm .wmv .flv .m4v .wav .flac .aac .wma .m4a .opus .ogg .jpg .jpeg .png .gif .webp .bmp .svg"
 
 # --- Security & API Settings ---
 # A secure, random key for accessing the API endpoint AND the website.

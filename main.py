@@ -152,6 +152,10 @@ def setup_directories():
 
 def log_activity(event_type, details):
     log_file_path = os.path.join(config.DATA_FOLDER, config.DATA_FILE)
+    try:
+        os.makedirs(config.DATA_FOLDER, exist_ok=True)
+    except Exception:
+        pass
     log_entry = {
         "timestamp": datetime.now().isoformat(),
         "event": event_type,
@@ -523,6 +527,11 @@ def serve_media(filename):
 
     log_activity("file_download_request", {"filename": filename})
     return send_file(filepath)
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(app.static_folder, "logo.svg", mimetype="image/svg+xml")
 
 
 @app.route('/thumbnails/<path:filename>')
