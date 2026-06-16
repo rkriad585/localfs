@@ -9,12 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
-# localfs runtime data
+# localfs runtime data (now stored in ~/.config/neostore/localfs/)
 data/
-
-# Generated thumbnails
+media/
 static/thumbnails/
-!static/thumbnails/.gitkeep
 
 # Test temporary directory
 .pytest_tmp/

@@ -337,9 +337,9 @@ def _self_uninstall():
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Failed to uninstall localfs: {e}[/red]")
 
-    if os.path.isdir(config.DATA_FOLDER):
-        shutil.rmtree(config.DATA_FOLDER, ignore_errors=True)
-        console.print(f"[green]Removed data directory: {config.DATA_FOLDER}[/green]")
+    if os.path.isdir(config.BASE_DIR):
+        shutil.rmtree(config.BASE_DIR, ignore_errors=True)
+        console.print(f"[green]Removed localfs data: {config.BASE_DIR}[/green]")
 
     sys.exit(0)
 

@@ -13,17 +13,25 @@ class TestConfigValues:
     def test_debug(self):
         assert config.DEBUG is True
 
+    def test_base_dir(self):
+        assert config.BASE_DIR.endswith("/.config/neostore/localfs") or config.BASE_DIR.endswith("\\.config\\neostore\\localfs")
+        assert os.path.isabs(config.BASE_DIR)
+
+    def test_base_dir_uses_home(self):
+        home = os.path.expanduser("~")
+        assert config.BASE_DIR.startswith(home)
+
     def test_media_folder(self):
-        assert config.MEDIA_FOLDER == "media"
+        assert config.MEDIA_FOLDER == os.path.join(config.BASE_DIR, "media")
 
     def test_data_folder(self):
-        assert config.DATA_FOLDER == "data"
+        assert config.DATA_FOLDER == os.path.join(config.BASE_DIR, "data")
 
     def test_data_file(self):
         assert config.DATA_FILE == "localfs-data.json"
 
     def test_thumbnail_folder(self):
-        assert config.THUMBNAIL_FOLDER == os.path.join("static", "thumbnails")
+        assert config.THUMBNAIL_FOLDER == os.path.join(config.BASE_DIR, "thumbnails")
 
     def test_allowed_extensions(self):
         assert config.ALLOWED_EXTENSIONS == ".mkv .mp4 .mp3"
@@ -42,8 +50,8 @@ class TestConfigValues:
     def test_website_access_key_required(self):
         assert config.WEBSITE_ACCESS_KEY_REQUIRED is True
 
-    def test_media_folder_is_relative(self):
-        assert not os.path.isabs(config.MEDIA_FOLDER)
+    def test_media_folder_is_absolute(self):
+        assert os.path.isabs(config.MEDIA_FOLDER)
 
-    def test_data_folder_is_relative(self):
-        assert not os.path.isabs(config.DATA_FOLDER)
+    def test_data_folder_is_absolute(self):
+        assert os.path.isabs(config.DATA_FOLDER)

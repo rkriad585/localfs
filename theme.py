@@ -3,7 +3,7 @@ import tomllib
 import config
 from collections import OrderedDict
 
-CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "neostore", "localfs")
+CONFIG_DIR = config.BASE_DIR
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.toml")
 CURRENT_THEME = "dark"
 CURRENT_MODE = "dark"

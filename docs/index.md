@@ -29,3 +29,4 @@ Welcome to the localfs documentation.
 | Guide | Description |
 |---|---|
 | [Development](development.md) | Setting up a development environment |
+| [Roadmap](roadmap.md) | Future features and planned improvements |
