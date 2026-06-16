@@ -9,6 +9,22 @@
         transform: translateY(-5px);
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
     }
+    .file-card .file-actions {
+        opacity: 0;
+        transition: opacity 0.15s ease-in-out;
+    }
+    .file-card:hover .file-actions {
+        opacity: 1;
+    }
+    .upload-area {
+        border: 2px dashed var(--border);
+        transition: border-color 0.2s, background-color 0.2s;
+    }
+    .upload-area:hover,
+    .upload-area.drag-over {
+        border-color: var(--accent);
+        background-color: rgba(59, 130, 246, 0.05);
+    }
 </style>
 {% endblock %}
 {% block content %}
@@ -24,44 +40,112 @@
         </a>
     </header>
 
+    {% if breadcrumbs %}
+    <nav class="mb-6 text-sm flex items-center space-x-2 overflow-x-auto">
+        {% for crumb in breadcrumbs %}
+            {% if loop.last %}
+                <span class="text-accent font-semibold">{{ crumb.name }}</span>
+            {% else %}
+                <a href="{{ url_for('index', key=request.args.get('key'), dir=crumb.path) if crumb.path else url_for('index', key=request.args.get('key')) }}"
+                   class="text-muted hover:text-accent transition-colors whitespace-nowrap">
+                    {{ crumb.name }}
+                </a>
+                <span class="text-muted">/</span>
+            {% endif %}
+        {% endfor %}
+    </nav>
+    {% endif %}
+
     <div class="mb-8 max-w-2xl mx-auto">
         <div class="relative">
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <i class="fas fa-search text-muted"></i>
             </div>
-            <input type="text" id="searchInput"
+            <input type="text" id="searchInput" value="{{ search_q or '' }}"
                    class="block w-full bg-input border border-color rounded-full py-3 pl-10 pr-4 text-primary focus:outline-none focus:ring-2 ring-accent"
                    placeholder="Search for files...">
         </div>
     </div>
 
+    <div class="mb-8">
+        <form action="{{ url_for('upload_file', key=request.args.get('key'), dir=current_dir) }}" method="POST" enctype="multipart/form-data"
+              class="upload-area rounded-lg p-6 text-center cursor-pointer" id="uploadForm">
+            <input type="file" name="file" id="fileInput" class="hidden" required>
+            <input type="hidden" name="dir" value="{{ current_dir }}">
+            <div class="text-muted">
+                <i class="fas fa-cloud-upload-alt text-4xl mb-2"></i>
+                <p class="text-lg font-semibold">Click or drag files here to upload</p>
+                <p class="text-sm">Files are saved to the current directory</p>
+            </div>
+        </form>
+    </div>
+
     <div id="file-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {% if parent_dir is not none %}
+        <div class="file-card bg-card rounded-lg overflow-hidden shadow-card flex flex-col cursor-pointer hover:bg-secondary transition-colors"
+             onclick="window.location.href='{{ url_for('index', key=request.args.get('key'), dir=parent_dir) if parent_dir else url_for('index', key=request.args.get('key')) }}'"
+             data-filename="">
+            <div class="h-48 bg-secondary flex items-center justify-center">
+                <i class="fas fa-level-up-alt text-6xl text-muted"></i>
+            </div>
+            <div class="p-4">
+                <h3 class="text-lg font-semibold text-primary">.. (Parent)</h3>
+            </div>
+        </div>
+        {% endif %}
+
+        {% for d in dirs %}
+        <div class="file-card bg-card rounded-lg overflow-hidden shadow-card flex flex-col cursor-pointer hover:bg-secondary transition-colors"
+             onclick="window.location.href='{{ url_for('index', key=request.args.get('key'), dir=d.path) }}'"
+             data-filename="{{ d.name.lower() }}">
+            <div class="h-48 bg-secondary flex items-center justify-center">
+                <i class="fas fa-folder text-6xl text-accent"></i>
+            </div>
+            <div class="p-4">
+                <h3 class="text-lg font-semibold text-primary truncate" title="{{ d.name }}">{{ d.name }}</h3>
+                <p class="text-sm text-muted">Directory</p>
+            </div>
+        </div>
+        {% endfor %}
+
         {% for file in files %}
-        <div class="file-card bg-card rounded-lg overflow-hidden shadow-card flex flex-col"
+        <div class="file-card bg-card rounded-lg overflow-hidden shadow-card flex flex-col relative"
              data-filename="{{ file.name.lower() }}">
-            <a href="{% if file.is_playable %}{{ url_for('player', filename=file.name, key=request.args.get('key')) }}{% else %}#{% endif %}"
+            <a href="{% if file.is_playable %}{{ url_for('player', filename=file.path, key=request.args.get('key')) }}{% else %}#{% endif %}"
                class="block h-48 bg-secondary flex items-center justify-center overflow-hidden">
                 {% if file.thumbnail %}
-                    <img src="{{ url_for('static', filename=file.thumbnail) }}" alt="Thumbnail for {{ file.name }}" class="object-cover h-full w-full">
+                    <img src="{{ url_for('serve_thumbnail', filename=file.thumbnail) }}" alt="Thumbnail for {{ file.name }}" class="object-cover h-full w-full">
                 {% elif file.type == 'image' %}
-                    <img src="{{ url_for('serve_media', filename=file.name) }}" alt="{{ file.name }}" class="object-cover h-full w-full">
+                    <img src="{{ url_for('serve_media', filename=file.path) }}" alt="{{ file.name }}" class="object-cover h-full w-full">
                 {% else %}
                     <i class="fas {{ file.icon }} text-6xl text-muted"></i>
                 {% endif %}
             </a>
 
             <div class="p-4 flex flex-col flex-grow">
-                <h3 class="text-lg font-semibold text-primary truncate" title="{{ file.name }}">{{ file.name }}</h3>
+                <div class="flex items-start justify-between">
+                    <h3 class="text-lg font-semibold text-primary truncate flex-1" title="{{ file.name }}">{{ file.name }}</h3>
+                    <div class="file-actions flex space-x-1 ml-2">
+                        <button onclick="event.stopPropagation(); renameFile('{{ file.name }}', '{{ current_dir }}')"
+                                class="text-muted hover:text-accent transition-colors text-sm p-1" title="Rename">
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                        <button onclick="event.stopPropagation(); deleteFile('{{ file.name }}', '{{ current_dir }}')"
+                                class="text-muted hover:text-red-500 transition-colors text-sm p-1" title="Delete">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
                 <p class="text-sm text-muted">{{ file.size }}</p>
                 <div class="mt-4 flex-grow flex items-end">
                     <div class="w-full flex space-x-2">
                         {% if file.is_playable %}
-                            <a href="{{ url_for('player', filename=file.name, key=request.args.get('key')) }}"
+                            <a href="{{ url_for('player', filename=file.path, key=request.args.get('key')) }}"
                                class="btn-play flex-1">
                                 <i class="fas fa-play mr-2"></i>Play
                             </a>
                         {% endif %}
-                        <a href="{{ url_for('serve_media', filename=file.name) }}" download
+                        <a href="{{ url_for('serve_media', filename=file.path) }}" download
                            class="btn-download flex-1">
                             <i class="fas fa-download mr-2"></i>Download
                         </a>
@@ -70,7 +154,9 @@
             </div>
         </div>
         {% else %}
+            {% if not dirs %}
             <p class="text-muted col-span-full text-center">No files found. Add some to the 'media' folder!</p>
+            {% endif %}
         {% endfor %}
     </div>
 
@@ -78,4 +164,70 @@
         <p>No files match your search.</p>
     </div>
 </div>
+
+<script>
+function deleteFile(filename, dir) {
+    if (!confirm('Delete "' + filename + '"? This cannot be undone.')) return;
+    var key = new URLSearchParams(window.location.search).get('key') || '';
+    var formData = new FormData();
+    formData.append('filename', filename);
+    formData.append('dir', dir || '');
+    fetch('{{ url_for("delete_file") }}' + (key ? '?key=' + key : ''), {
+        method: 'POST',
+        body: formData
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    }).catch(function() {
+        alert('Error deleting file');
+    });
+}
+
+function renameFile(filename, dir) {
+    var newName = prompt('Rename "' + filename + '" to:', filename);
+    if (!newName || newName === filename) return;
+    var key = new URLSearchParams(window.location.search).get('key') || '';
+    var formData = new FormData();
+    formData.append('filename', filename);
+    formData.append('new_name', newName);
+    formData.append('dir', dir || '');
+    fetch('{{ url_for("rename_file") }}' + (key ? '?key=' + key : ''), {
+        method: 'POST',
+        body: formData
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    }).catch(function() {
+        alert('Error renaming file');
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var uploadForm = document.getElementById('uploadForm');
+    var fileInput = document.getElementById('fileInput');
+    uploadForm.addEventListener('click', function() { fileInput.click(); });
+    fileInput.addEventListener('change', function() { if (this.files.length) uploadForm.submit(); });
+    uploadForm.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.classList.add('drag-over');
+    });
+    uploadForm.addEventListener('dragleave', function() {
+        this.classList.remove('drag-over');
+    });
+    uploadForm.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.classList.remove('drag-over');
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            uploadForm.submit();
+        }
+    });
+});
+</script>
 {% endblock %}

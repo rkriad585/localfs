@@ -55,3 +55,13 @@ class TestConfigValues:
 
     def test_data_folder_is_absolute(self):
         assert os.path.isabs(config.DATA_FOLDER)
+
+    def test_version_is_string(self):
+        assert isinstance(config.VERSION, str)
+        assert len(config.VERSION) > 0
+
+    def test_version_format(self):
+        parts = config.VERSION.split(".")
+        assert len(parts) == 3
+        for p in parts:
+            int(p)  # each part must be numeric

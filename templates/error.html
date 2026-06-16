@@ -4,7 +4,7 @@
 <div class="text-center px-4 py-24">
     <div class="text-8xl font-bold text-muted mb-4">{{ code }}</div>
     <p class="text-xl text-muted mb-8">{{ message }}</p>
-    <a href="{{ url_for('index', key=request.args.get('key')) if request.args.get('key') else url_for('index') }}"
+    <a href="{{ url_for('index', key=request.args.get('key'), dir=request.args.get('dir')) if request.args.get('key') else url_for('index', dir=request.args.get('dir')) }}"
        class="btn-accent inline-flex">
         <i class="fas fa-arrow-left mr-2"></i>Back to Library
     </a>

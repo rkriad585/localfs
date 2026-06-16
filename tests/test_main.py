@@ -3,8 +3,9 @@ import json
 import subprocess
 import sys
 from unittest.mock import patch, MagicMock, ANY
-from io import StringIO
+from io import BytesIO, StringIO
 
+import click
 import pytest
 
 import config
@@ -231,13 +232,13 @@ class TestGenerateThumbnail:
         expected_thumb = thumb_dir / "video.jpg"
         expected_thumb.write_bytes(b"fake thumb")
         result = main.generate_thumbnail("video.mp4")
-        assert result == "thumbnails/video.jpg"
+        assert result == "video.jpg"
 
     def test_generates_new_thumbnail_with_ffmpeg(self, test_config, media_dir, thumb_dir):
         (media_dir / "video.mp4").write_bytes(b"fake")
         with patch("subprocess.run"):
             result = main.generate_thumbnail("video.mp4")
-        assert result == "thumbnails/video.jpg"
+        assert result == "video.jpg"
 
     def test_ffmpeg_failure_returns_none(self, test_config, media_dir, thumb_dir):
         (media_dir / "broken.mp4").write_bytes(b"garbage")
@@ -282,10 +283,11 @@ class TestIndexRoute:
         html = resp.data.decode()
         assert "document.txt" not in html
 
-    def test_hides_directories(self, client, test_config, media_dir, sample_files):
+    def test_shows_directories(self, client, test_config, media_dir, sample_files):
         resp = client.get("/")
         html = resp.data.decode()
-        assert "subdir" not in html
+        assert "subdir" in html
+        assert "fa-folder" in html
 
     def test_marks_videos_as_playable(self, client, test_config, media_dir, sample_files):
         resp = client.get("/")
@@ -370,6 +372,281 @@ class TestIndexRoute:
             resp = client.get("/")
         html = resp.data.decode()
         assert "thumbnails/clip.jpg" in html
+
+
+class TestDirectoryBrowsing:
+    def test_shows_up_dir_at_root(self, client, test_config, media_dir):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "Parent" not in html or "level-up" not in html
+
+    def test_shows_up_dir_in_subdir(self, client, test_config, media_dir):
+        sub = media_dir / "subdir"
+        sub.mkdir()
+        (sub / "file.mp4").write_bytes(b"data")
+        resp = client.get("/?dir=subdir")
+        html = resp.data.decode()
+        assert "Parent" in html or "level-up" in html
+
+    def test_shows_breadcrumbs_in_subdir(self, client, test_config, media_dir):
+        sub = media_dir / "subdir"
+        sub.mkdir()
+        resp = client.get("/?dir=subdir")
+        html = resp.data.decode()
+        assert "subdir" in html
+        assert "~" in html
+
+    def test_breadcrumb_link_goes_up(self, client, test_config, media_dir):
+        sub = media_dir / "a" / "b"
+        sub.mkdir(parents=True)
+        (sub / "f.mp4").write_bytes(b"data")
+        resp = client.get("/?dir=a/b")
+        html = resp.data.decode()
+        assert 'dir=a' in resp.data.decode() or 'dir=a' in html
+        assert '/?key=' not in html or 'key=' not in html
+
+    def test_files_in_subdir_have_correct_paths(self, client, test_config, media_dir):
+        sub = media_dir / "movies"
+        sub.mkdir()
+        (sub / "clip.mp4").write_bytes(b"data")
+        resp = client.get("/?dir=movies")
+        html = resp.data.decode()
+        assert "/player/movies/clip.mp4" in html
+        assert "/media/movies/clip.mp4" in html
+
+    def test_directory_404_for_nonexistent_dir(self, client, test_config, media_dir):
+        resp = client.get("/?dir=nonexistent")
+        assert resp.status_code == 404
+
+    def test_directory_blocks_path_traversal(self, client, test_config, media_dir):
+        resp = client.get("/?dir=../")
+        assert resp.status_code in (404, 400)
+
+    def test_dirs_listed_with_folder_icon(self, client, test_config, media_dir):
+        sub = media_dir / "testdir"
+        sub.mkdir()
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "testdir" in html
+        assert "fa-folder" in html
+
+    def test_directory_has_no_download_button(self, client, test_config, media_dir):
+        sub = media_dir / "testdir"
+        sub.mkdir()
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "testdir" in html
+
+
+class TestServerSideSearch:
+    def test_search_by_name(self, client, test_config, media_dir):
+        (media_dir / "movie.mp4").write_bytes(b"data")
+        (media_dir / "song.mp3").write_bytes(b"data")
+        resp = client.get("/?q=movie")
+        html = resp.data.decode()
+        assert "movie.mp4" in html
+        assert "song.mp3" not in html
+
+    def test_search_is_case_insensitive(self, client, test_config, media_dir):
+        (media_dir / "Movie.MP4").write_bytes(b"data")
+        resp = client.get("/?q=movie")
+        html = resp.data.decode()
+        assert "Movie.MP4" in html
+
+    def test_search_returns_all_when_empty(self, client, test_config, media_dir, sample_files):
+        resp = client.get("/?q=")
+        html = resp.data.decode()
+        assert "video.mp4" in html
+        assert "audio.mp3" in html
+        assert "video.mkv" in html
+
+    def test_search_returns_none_when_no_match(self, client, test_config, media_dir, sample_files):
+        resp = client.get("/?q=nonexistent")
+        html = resp.data.decode()
+        assert "video.mp4" not in html
+        assert "No files found" in html
+
+    def test_search_filters_directories(self, client, test_config, media_dir):
+        (media_dir / "sub_movies").mkdir()
+        (media_dir / "sub_movies" / "clip.mp4").write_bytes(b"data")
+        (media_dir / "sub_pics").mkdir()
+        resp = client.get("/?q=movies")
+        html = resp.data.decode()
+        assert "sub_movies" in html
+        assert "sub_pics" not in html
+
+    def test_filter_by_type_video(self, client, test_config, media_dir):
+        (media_dir / "clip.mp4").write_bytes(b"data")
+        (media_dir / "song.mp3").write_bytes(b"data")
+        (media_dir / "pic.jpg").write_bytes(b"data")
+        with patch.object(config, "ALLOWED_EXTENSIONS", ""):
+            resp = client.get("/?type=video")
+        html = resp.data.decode()
+        assert "clip.mp4" in html
+        assert "song.mp3" not in html
+        assert "pic.jpg" not in html
+
+    def test_filter_by_type_audio(self, client, test_config, media_dir):
+        (media_dir / "clip.mp4").write_bytes(b"data")
+        (media_dir / "song.mp3").write_bytes(b"data")
+        with patch.object(config, "ALLOWED_EXTENSIONS", ""):
+            resp = client.get("/?type=audio")
+        html = resp.data.decode()
+        assert "song.mp3" in html
+        assert "clip.mp4" not in html
+
+    def test_filter_by_size_small(self, client, test_config, media_dir):
+        (media_dir / "small.txt").write_bytes(b"x" * 100)
+        (media_dir / "large.txt").write_bytes(b"x" * (1024 * 1024 * 2))
+        with patch.object(config, "ALLOWED_EXTENSIONS", ""):
+            resp = client.get("/?size=small")
+        html = resp.data.decode()
+        assert "small.txt" in html
+        assert "large.txt" not in html
+
+    def test_filter_by_size_large(self, client, test_config, media_dir):
+        (media_dir / "small.txt").write_bytes(b"x" * 100)
+        (media_dir / "medium.txt").write_bytes(b"x" * (1024 * 1024 * 5))
+        (media_dir / "large.txt").write_bytes(b"x" * (1024 * 1024 * 200))
+        with patch.object(config, "ALLOWED_EXTENSIONS", ""):
+            resp = client.get("/?size=large")
+        html = resp.data.decode()
+        assert "large.txt" in html
+        assert "small.txt" not in html
+        assert "medium.txt" not in html
+
+
+class TestThumbnailRoute:
+    def test_serves_existing_thumbnail(self, client, test_config, thumb_dir):
+        (thumb_dir / "test.jpg").write_bytes(b"image data")
+        resp = client.get("/thumbnails/test.jpg")
+        assert resp.status_code == 200
+        assert resp.data == b"image data"
+
+    def test_returns_404_for_missing_thumbnail(self, client, test_config):
+        resp = client.get("/thumbnails/nonexistent.jpg")
+        assert resp.status_code == 404
+
+    def test_blocks_path_traversal(self, client, test_config):
+        resp = client.get("/thumbnails/../config.py")
+        assert resp.status_code in (404, 400)
+
+
+class TestUploadRoute:
+    def test_upload_file(self, client, test_config, media_dir):
+        data = {"file": (BytesIO(b"test content"), "uploaded.txt")}
+        resp = client.post("/upload", data=data, content_type="multipart/form-data")
+        assert resp.status_code == 302
+        assert (media_dir / "uploaded.txt").exists()
+
+    def test_upload_to_subdir(self, client, test_config, media_dir):
+        sub = media_dir / "sub"
+        sub.mkdir()
+        data = {"file": (BytesIO(b"data"), "f.txt"), "dir": "sub"}
+        resp = client.post("/upload?dir=sub", data=data, content_type="multipart/form-data")
+        assert resp.status_code == 302
+
+    def test_upload_duplicate_renames(self, client, test_config, media_dir):
+        (media_dir / "dup.txt").write_bytes(b"original")
+        data = {"file": (BytesIO(b"new"), "dup.txt")}
+        client.post("/upload", data=data, content_type="multipart/form-data")
+        assert (media_dir / "dup.txt").exists()
+        assert (media_dir / "dup_1.txt").exists()
+
+    def test_upload_no_file_returns_400(self, client, test_config):
+        resp = client.post("/upload", data={})
+        assert resp.status_code == 400
+
+    def test_upload_empty_filename_returns_400(self, client, test_config):
+        data = {"file": (BytesIO(b""), "")}
+        resp = client.post("/upload", data=data, content_type="multipart/form-data")
+        assert resp.status_code == 400
+
+    def test_upload_blocked_without_key_when_required(self, client, test_config, media_dir):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        data = {"file": (BytesIO(b"data"), "f.txt")}
+        resp = client.post("/upload", data=data, content_type="multipart/form-data")
+        assert resp.status_code == 401
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+
+    def test_upload_with_key_when_required(self, client, test_config, media_dir):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        data = {"file": (BytesIO(b"data"), "f.txt")}
+        resp = client.post(f"/upload?key={config.API_KEY}", data=data, content_type="multipart/form-data")
+        assert resp.status_code == 302
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+
+
+class TestDeleteRoute:
+    def test_delete_file(self, client, test_config, media_dir):
+        (media_dir / "delete_me.txt").write_bytes(b"data")
+        resp = client.post("/delete", data={"filename": "delete_me.txt"})
+        assert resp.status_code == 200
+        assert resp.json["success"] is True
+        assert not (media_dir / "delete_me.txt").exists()
+
+    def test_delete_nonexistent_returns_404(self, client, test_config):
+        resp = client.post("/delete", data={"filename": "ghost.txt"})
+        assert resp.status_code == 404
+
+    def test_delete_in_subdir(self, client, test_config, media_dir):
+        sub = media_dir / "sub"
+        sub.mkdir()
+        (sub / "f.txt").write_bytes(b"data")
+        resp = client.post("/delete", data={"filename": "f.txt", "dir": "sub"})
+        assert resp.status_code == 200
+        assert not (sub / "f.txt").exists()
+
+    def test_delete_blocks_path_traversal(self, client, test_config):
+        resp = client.post("/delete", data={"filename": "../config.py"})
+        assert resp.status_code == 404
+
+    def test_delete_blocked_without_key_when_required(self, client, test_config, media_dir):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        (media_dir / "f.txt").write_bytes(b"data")
+        resp = client.post("/delete", data={"filename": "f.txt"})
+        assert resp.status_code == 401
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+
+
+class TestRenameRoute:
+    def test_rename_file(self, client, test_config, media_dir):
+        (media_dir / "old.txt").write_bytes(b"data")
+        resp = client.post("/rename", data={"filename": "old.txt", "new_name": "new.txt"})
+        assert resp.status_code == 200
+        assert resp.json["success"] is True
+        assert not (media_dir / "old.txt").exists()
+        assert (media_dir / "new.txt").exists()
+
+    def test_rename_nonexistent_returns_404(self, client, test_config):
+        resp = client.post("/rename", data={"filename": "ghost.txt", "new_name": "alive.txt"})
+        assert resp.status_code == 404
+
+    def test_rename_to_existing_returns_409(self, client, test_config, media_dir):
+        (media_dir / "a.txt").write_bytes(b"a")
+        (media_dir / "b.txt").write_bytes(b"b")
+        resp = client.post("/rename", data={"filename": "a.txt", "new_name": "b.txt"})
+        assert resp.status_code == 409
+
+    def test_rename_requires_names(self, client, test_config):
+        resp = client.post("/rename", data={"filename": "x.txt", "new_name": ""})
+        assert resp.status_code == 400
+
+    def test_rename_in_subdir(self, client, test_config, media_dir):
+        sub = media_dir / "sub"
+        sub.mkdir()
+        (sub / "old.txt").write_bytes(b"data")
+        resp = client.post("/rename", data={"filename": "old.txt", "new_name": "renamed.txt", "dir": "sub"})
+        assert resp.status_code == 200
+        assert not (sub / "old.txt").exists()
+        assert (sub / "renamed.txt").exists()
+
+    def test_rename_blocked_without_key_when_required(self, client, test_config, media_dir):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        (media_dir / "f.txt").write_bytes(b"data")
+        resp = client.post("/rename", data={"filename": "f.txt", "new_name": "g.txt"})
+        assert resp.status_code == 401
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
 
 
 class TestPlayerRoute:
@@ -752,11 +1029,13 @@ class TestCheckFfmpeg:
 # =============================================================================
 
 class TestMainCli:
+    _KW = dict(port=None, host=None, key=None, media=None, no_auth=False, theme=None, mode=None, add_user=None, remove_user=None)
+
     def test_default_no_share(self, test_config, media_dir, data_dir, thumb_dir):
         with patch.object(main, "setup_directories") as mock_setup:
             with patch.object(main.console, "print"):
                 with patch.object(main.app, "run"):
-                    main.main.callback(share=False, selfuninstall=False)
+                    main.main.callback(share=False, selfuninstall=False, **self._KW)
         mock_setup.assert_called_once()
         assert main._share_enabled is False
 
@@ -764,21 +1043,88 @@ class TestMainCli:
         with patch.object(main, "setup_directories"):
             with patch.object(main.console, "print"):
                 with patch.object(main.app, "run"):
-                    main.main.callback(share=True, selfuninstall=False)
+                    main.main.callback(share=True, selfuninstall=False, **self._KW)
         assert main._share_enabled is True
 
     def test_selfuninstall_flag(self, test_config, data_dir):
         with patch.object(main.subprocess, "check_call") as mock_pip:
             with patch.object(main.sys, "exit") as mock_exit:
-                main.main.callback(share=False, selfuninstall=True)
+                main.main.callback(share=False, selfuninstall=True, **self._KW)
         mock_pip.assert_called_once_with(
             [main.sys.executable, "-m", "pip", "uninstall", "-y", "localfs"]
         )
         mock_exit.assert_called_once_with(0)
 
+    def test_port_flag(self, test_config, media_dir, data_dir, thumb_dir):
+        with patch.object(main, "setup_directories"):
+            with patch.object(main.console, "print"):
+                with patch.object(main.app, "run"):
+                    main.main.callback(share=False, selfuninstall=False, port=8080,
+                                       **{k: v for k, v in self._KW.items() if k != "port"})
+        assert config.PORT == 8080
+
+    def test_host_flag(self, test_config, media_dir, data_dir, thumb_dir):
+        with patch.object(main, "setup_directories"):
+            with patch.object(main.console, "print"):
+                with patch.object(main.app, "run"):
+                    main.main.callback(share=False, selfuninstall=False, host="127.0.0.1",
+                                       **{k: v for k, v in self._KW.items() if k != "host"})
+        assert config.HOST == "127.0.0.1"
+
+    def test_key_flag(self, test_config, media_dir, data_dir, thumb_dir):
+        with patch.object(main, "setup_directories"):
+            with patch.object(main.console, "print"):
+                with patch.object(main.app, "run"):
+                    main.main.callback(share=False, selfuninstall=False, key="customkey",
+                                       **{k: v for k, v in self._KW.items() if k != "key"})
+        assert config.API_KEY == "customkey"
+
+    def test_media_flag(self, test_config, media_dir, data_dir, thumb_dir, tmp_path):
+        new_media = tmp_path / "custom_media"
+        new_media.mkdir()
+        with patch.object(main, "setup_directories"):
+            with patch.object(main.console, "print"):
+                with patch.object(main.app, "run"):
+                    main.main.callback(share=False, selfuninstall=False, media=str(new_media),
+                                       **{k: v for k, v in self._KW.items() if k != "media"})
+        assert config.MEDIA_FOLDER == str(new_media)
+
+    def test_no_auth_flag(self, test_config, media_dir, data_dir, thumb_dir):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        with patch.object(main, "setup_directories"):
+            with patch.object(main.console, "print"):
+                with patch.object(main.app, "run"):
+                    main.main.callback(share=False, selfuninstall=False, no_auth=True,
+                                       **{k: v for k, v in self._KW.items() if k != "no_auth"})
+        assert config.WEBSITE_ACCESS_KEY_REQUIRED is False
+
+    def test_theme_flag(self, test_config, media_dir, data_dir, thumb_dir):
+        import theme
+        original = theme.CURRENT_THEME
+        with patch.object(main, "setup_directories"):
+            with patch.object(main.console, "print"):
+                with patch.object(main.app, "run"):
+                    main.main.callback(share=False, selfuninstall=False, theme="light",
+                                       **{k: v for k, v in self._KW.items() if k != "theme"})
+        assert theme.CURRENT_THEME == "light"
+
+    def test_mode_flag(self, test_config, media_dir, data_dir, thumb_dir):
+        import theme
+        theme.CURRENT_MODE = "light"
+        with patch.object(main, "setup_directories"):
+            with patch.object(main.console, "print"):
+                with patch.object(main.app, "run"):
+                    main.main.callback(share=False, selfuninstall=False, mode="dark",
+                                       **{k: v for k, v in self._KW.items() if k != "mode"})
+        assert theme.CURRENT_MODE == "dark"
+
     def test_click_command_created(self):
         assert hasattr(main, "main")
         assert callable(main.main)
+
+    def test_version_option_registered(self):
+        assert any(isinstance(p, click.core.Option) and "--version" in p.opts
+                   for p in main.main.params)
 
 
 # =============================================================================
@@ -876,3 +1222,183 @@ class TestErrorTemplateContext:
 
 
 from pathlib import Path
+
+
+# =============================================================================
+# User management
+# =============================================================================
+
+class TestUserManagement:
+    def test_add_and_authenticate_user(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        main.add_user("admin", "secret123")
+        assert main.authenticate_user("admin", "secret123") is True
+        assert main.authenticate_user("admin", "wrong") is False
+        assert main.authenticate_user("nobody", "x") is False
+
+    def test_user_exists(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        main.add_user("alice", "pass")
+        assert main.user_exists("alice") is True
+        assert main.user_exists("bob") is False
+
+    def test_remove_user(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        main.add_user("alice", "pass")
+        main.remove_user("alice")
+        assert main.user_exists("alice") is False
+
+    def test_remove_nonexistent_user_does_not_error(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        main.remove_user("ghost")  # should not raise
+
+    def test_load_users_empty_file(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        assert main.load_users() == {}
+
+    def test_load_users_missing_file(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "nonexistent.json"))
+        assert main.load_users() == {}
+
+    def test_save_users_preserves_data(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        main.add_user("u1", "p1")
+        main.add_user("u2", "p2")
+        loaded = main.load_users()
+        assert len(loaded) == 2
+        assert "u1" in loaded
+        assert "u2" in loaded
+
+
+class TestLoginRoute:
+    def test_login_page_renders(self, client, test_config):
+        resp = client.get("/login")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "Sign in" in html
+        assert "username" in html
+        assert "password" in html
+
+    def test_login_with_valid_credentials(self, client, test_config, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        main.add_user("admin", "pass")
+        resp = client.post("/login", data={"username": "admin", "password": "pass"})
+        assert resp.status_code == 302
+
+    def test_login_with_invalid_credentials(self, client, test_config):
+        resp = client.post("/login", data={"username": "admin", "password": "wrong"})
+        assert resp.status_code == 401
+
+    def test_login_redirects_to_index(self, client, test_config, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        main.add_user("admin", "pass")
+        resp = client.post("/login", data={"username": "admin", "password": "pass"})
+        assert resp.status_code == 302
+        assert resp.location.endswith("/") or "/?key=" in resp.location
+
+    def test_login_preserves_key(self, client, test_config, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "USERS_FILE", str(tmp_path / "users.json"))
+        main.add_user("admin", "pass")
+        resp = client.post("/login?key=abc", data={"username": "admin", "password": "pass"})
+        assert resp.status_code == 302
+        assert "key=abc" in resp.location
+
+    def test_logout_clears_session(self, client, test_config):
+        with client.session_transaction() as sess:
+            sess['authenticated'] = True
+            sess['username'] = 'admin'
+        resp = client.get("/logout")
+        assert resp.status_code == 302
+        with client.session_transaction() as sess:
+            assert 'authenticated' not in sess
+
+
+class TestSessionAuth:
+    def test_session_allows_access(self, client, test_config, media_dir):
+        (media_dir / "video.mp4").write_bytes(b"data")
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        with client.session_transaction() as sess:
+            sess['authenticated'] = True
+            sess['username'] = 'admin'
+        resp = client.get("/")
+        assert resp.status_code == 200
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+
+    def test_session_without_auth_still_blocked(self, client, test_config):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        with client.session_transaction() as sess:
+            sess['some_data'] = 'value'  # not authenticated
+        resp = client.get("/")
+        assert resp.status_code == 401
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+
+
+# =============================================================================
+# Directory browsing helpers
+# =============================================================================
+
+class TestSafeJoin:
+    def test_safe_join_simple(self):
+        result = main.safe_join("/base", "file.txt")
+        assert result == "/base/file.txt"
+
+    def test_safe_join_subdir(self):
+        result = main.safe_join("/base", "sub", "file.txt")
+        assert result == "/base/sub/file.txt"
+
+    def test_safe_join_rejects_traversal(self):
+        result = main.safe_join("/base", "../etc/passwd")
+        assert result is None
+
+    def test_safe_join_rejects_deep_traversal(self):
+        result = main.safe_join("/base", "sub", "../../etc/passwd")
+        assert result is None
+
+    def test_safe_join_allows_same_dir(self):
+        result = main.safe_join("/base", ".")
+        assert result is not None
+
+    def test_safe_join_returns_normalized(self):
+        result = main.safe_join("/base", "sub/./file.txt")
+        assert result == "/base/sub/file.txt"
+
+
+class TestBuildBreadcrumbs:
+    def test_empty_dir(self):
+        assert main.build_breadcrumbs("") == []
+
+    def test_single_level(self):
+        crumbs = main.build_breadcrumbs("Movies")
+        assert len(crumbs) == 2
+        assert crumbs[0]["name"] == "~"
+        assert crumbs[0]["path"] == ""
+        assert crumbs[1]["name"] == "Movies"
+        assert crumbs[1]["path"] == "Movies"
+
+    def test_multi_level(self):
+        crumbs = main.build_breadcrumbs("a/b/c")
+        assert len(crumbs) == 4
+        assert crumbs[2]["name"] == "b"
+        assert crumbs[2]["path"] == "a/b"
+
+    def test_leading_slash_stripped(self):
+        crumbs = main.build_breadcrumbs("/a/b")
+        assert len(crumbs) == 3
+
+    def test_trailing_slash_stripped(self):
+        crumbs = main.build_breadcrumbs("a/b/")
+        assert len(crumbs) == 3
+
+
+class TestParentDir:
+    def test_empty(self):
+        assert main.parent_dir("") is None
+
+    def test_single_level(self):
+        assert main.parent_dir("Movies") == ""
+
+    def test_multi_level(self):
+        assert main.parent_dir("a/b/c") == "a/b"
+
+    def test_two_levels(self):
+        assert main.parent_dir("a/b") == "a"

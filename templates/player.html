@@ -2,7 +2,8 @@
 {% block title %}Playing: {{ filename }}{% endblock %}
 {% block content %}
 <header class="w-full max-w-6xl mx-auto px-4 py-4">
-    <a href="{{ url_for('index', key=request.args.get('key')) }}" class="text-accent hover:text-accent-hover transition-colors">
+    <a href="{{ url_for('index', key=request.args.get('key'), dir=request.args.get('dir')) }}"
+       class="text-accent hover:text-accent-hover transition-colors">
         &larr; Back to Library
     </a>
     <h1 class="text-2xl font-bold text-primary truncate mt-2" title="{{ filename }}">{{ filename }}</h1>

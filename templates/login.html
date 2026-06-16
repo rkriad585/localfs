@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Login - localfs{% endblock %}
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4">
+    <div class="bg-card rounded-lg shadow-card p-8 w-full max-w-md">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-primary">localfs</h1>
+            <p class="text-muted mt-2">Sign in to access your media</p>
+        </div>
+
+        {% if error %}
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="POST">
+            <div class="mb-4">
+                <label for="username" class="block text-sm font-medium text-primary mb-1">Username</label>
+                <input type="text" id="username" name="username" required
+                       class="block w-full bg-input border border-color rounded-lg py-2 px-3 text-primary focus:outline-none focus:ring-2 ring-accent">
+            </div>
+            <div class="mb-6">
+                <label for="password" class="block text-sm font-medium text-primary mb-1">Password</label>
+                <input type="password" id="password" name="password" required
+                       class="block w-full bg-input border border-color rounded-lg py-2 px-3 text-primary focus:outline-none focus:ring-2 ring-accent">
+            </div>
+            <button type="submit"
+                    class="w-full btn-accent py-2 text-lg">
+                <i class="fas fa-sign-in-alt mr-2"></i>Sign In
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
