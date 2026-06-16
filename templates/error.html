@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ code }} - localfs</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="bg-gray-100 font-sans flex items-center justify-center min-h-screen">
+
+    <div class="text-center px-4">
+        <div class="text-8xl font-bold text-gray-300 mb-4">{{ code }}</div>
+        <p class="text-xl text-gray-600 mb-8">{{ message }}</p>
+        <a href="{{ url_for('index', key=request.args.get('key')) if request.args.get('key') else url_for('index') }}"
+           class="inline-block bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg">
+            <i class="fas fa-arrow-left mr-2"></i>Back to Library
+        </a>
+    </div>
+
+</body>
+</html>

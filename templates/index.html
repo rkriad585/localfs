@@ -1,4 +1,3 @@
-<!-- localfs/templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,7 +12,7 @@
         }
         .file-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
         }
     </style>
 </head>
@@ -35,31 +34,25 @@
         </div>
 
         <div id="file-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            
+
             {% for file in files %}
             <div class="file-card bg-white rounded-lg overflow-hidden shadow-md flex flex-col" data-filename="{{ file.name.lower() }}">
-                <!-- Media Preview Section - Now wrapped in a link for videos -->
-                <a href="{% if file.is_video %}{{ url_for('player', filename=file.name, key=request.args.get('key')) }}{% else %}#}{% endif %}" class="block h-48 bg-gray-200 flex items-center justify-center overflow-hidden">
+                <a href="{% if file.is_playable %}{{ url_for('player', filename=file.name, key=request.args.get('key')) }}{% else %}#{% endif %}" class="block h-48 bg-gray-200 flex items-center justify-center overflow-hidden">
                     {% if file.thumbnail %}
-                        <!-- If a thumbnail exists (for videos), display it -->
                         <img src="{{ url_for('static', filename=file.thumbnail) }}" alt="Thumbnail for {{ file.name }}" class="object-cover h-full w-full">
                     {% elif file.type == 'image' %}
-                        <!-- If the file is an image, display it directly -->
                         <img src="{{ url_for('serve_media', filename=file.name) }}" alt="{{ file.name }}" class="object-cover h-full w-full">
                     {% else %}
-                        <!-- For other file types, show a generic file icon -->
-                        <i class="fas fa-file-alt text-6xl text-gray-400"></i>
+                        <i class="fas {{ file.icon }} text-6xl text-gray-400"></i>
                     {% endif %}
                 </a>
-                
-                <!-- File Info and Actions Section -->
+
                 <div class="p-4 flex flex-col flex-grow">
                     <h3 class="text-lg font-semibold text-gray-800 truncate" title="{{ file.name }}">{{ file.name }}</h3>
                     <p class="text-sm text-gray-500">{{ file.size }}</p>
                     <div class="mt-4 flex-grow flex items-end">
-                        <!-- We now have two buttons: Play (for videos) and Download -->
                         <div class="w-full flex space-x-2">
-                             {% if file.is_video %}
+                             {% if file.is_playable %}
                                 <a href="{{ url_for('player', filename=file.name, key=request.args.get('key')) }}"
                                    class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg inline-block text-center">
                                     <i class="fas fa-play mr-2"></i>Play

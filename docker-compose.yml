@@ -1,0 +1,14 @@
+services:
+  localfs:
+    build: .
+    container_name: localfs
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./media:/app/media
+      - ./data:/app/data
+      - ./static/thumbnails:/app/static/thumbnails
+    environment:
+      - FLASK_RUN_HOST=0.0.0.0
+      - FLASK_RUN_PORT=5000
+    restart: unless-stopped

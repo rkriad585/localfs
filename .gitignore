@@ -8,3 +8,13 @@ wheels/
 
 # Virtual environments
 .venv
+
+# localfs runtime data
+data/
+
+# Generated thumbnails
+static/thumbnails/
+!static/thumbnails/.gitkeep
+
+# Test temporary directory
+.pytest_tmp/

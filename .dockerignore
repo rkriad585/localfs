@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+*.egg-info
+.venv
+
+# localfs runtime
+data/
+static/thumbnails/
+
+# Test / CI
+.pytest_cache/
+.pytest_tmp/
+.ruff_cache
+
+# Docker build context
+.git/
+.gitignore

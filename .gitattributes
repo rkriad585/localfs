@@ -1,0 +1,26 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Shell scripts must use LF
+*.sh text eol=lf
+
+# PowerShell scripts — keep CRLF on Windows, LF elsewhere
+*.ps1 text
+
+# Python files
+*.py text diff=python
+
+# Markdown
+*.md text diff=markdown
+
+# Images
+*.svg text
+*.png binary
+*.jpg binary
+
+# Archives
+*.gz binary
+*.zip binary
+
+# Lock files
+pyproject.toml text

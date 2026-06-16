@@ -1,7 +1,14 @@
 [project]
 name = "localfs"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "A simple, fast, and beautiful local file sharing service"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "flask>=3.0",
+    "rich>=13.0",
+    "click>=8.0",
+]
+
+[project.scripts]
+localfs = "main:main"

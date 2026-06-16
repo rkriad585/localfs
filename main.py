@@ -1,65 +1,78 @@
 # localfs/main.py
 
-# --- Standard Library Imports ---
 import os
 import sys
 import json
 import subprocess
 import importlib.util
-import shutil  # For checking for external programs like ffmpeg
+import shutil
+import mimetypes
 from datetime import datetime
 
-# --- Third-Party Library Imports ---
-try:
-    from flask import Flask, render_template, send_from_directory, request, jsonify, g, abort
-    from rich.console import Console
-    import click
-except ImportError:
-    pass
-
-# --- Local Application Imports ---
 import config
 
-# --- Dependency Management & Initialization ---
 def check_and_install_dependencies():
-    console = Console()
+    def print_fallback(msg):
+        print(msg)
+
+    console = None
+    try:
+        from rich.console import Console
+        console = Console()
+    except ImportError:
+        pass
+
+    out = console.print if console else print_fallback
+
     required_packages = ['flask', 'rich', 'click']
     missing_packages = [pkg for pkg in required_packages if importlib.util.find_spec(pkg) is None]
 
     if missing_packages:
-        console.print(f"[bold yellow]Warning:[/bold yellow] Missing packages: [bold red]{', '.join(missing_packages)}[/bold red]")
-        if input("Install them now? (Y/n): ").lower().strip() in ['y', 'yes', '']:
+        out(f"Warning: Missing packages: {', '.join(missing_packages)}")
+        try:
+            answer = input("Install them now? (Y/n): ").lower().strip()
+        except (EOFError, KeyboardInterrupt):
+            answer = 'n'
+        if answer in ['y', 'yes', '']:
             try:
                 for package in missing_packages:
                     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                console.print("[bold green]Dependencies installed. Please restart the script.[/bold green]")
+                out("Dependencies installed. Please restart the script.")
                 sys.exit(0)
             except subprocess.CalledProcessError as e:
-                console.print(f"[bold red]Error installing dependencies.[/bold red] Please install manually.", e)
+                out(f"Error installing dependencies. Please install manually. {e}")
                 sys.exit(1)
         else:
-            console.print("[bold red]Cannot proceed without dependencies.[/bold red]")
+            out("Cannot proceed without dependencies.")
             sys.exit(1)
 
-# NEW: Function to check for the ffmpeg external dependency
 def check_ffmpeg():
-    """Checks if ffmpeg is installed and available in the system's PATH."""
-    console = Console()
+    def print_fallback(msg):
+        print(msg)
+
+    console = None
+    try:
+        from rich.console import Console
+        console = Console()
+    except ImportError:
+        pass
+
+    out = console.print if console else print_fallback
+
     if not shutil.which("ffmpeg"):
-        console.print("[bold red]Error: `ffmpeg` is not installed or not in your system's PATH.[/bold red]")
-        console.print("`ffmpeg` is required to generate video thumbnails.")
-        console.print("\n[bold yellow]How to install:[/bold yellow]")
-        console.print("  - [bold]Windows:[/bold] Download from https://ffmpeg.org/download.html and add to your PATH.")
-        console.print("  - [bold]macOS (using Homebrew):[/bold] `brew install ffmpeg`")
-        console.print("  - [bold]Linux (Debian/Ubuntu):[/bold] `sudo apt update && sudo apt install ffmpeg`")
-        console.print("  - [bold]Linux (Fedora/CentOS):[/bold] `sudo dnf install ffmpeg`")
+        out("Error: `ffmpeg` is not installed or not in your system's PATH.")
+        out("`ffmpeg` is required to generate video thumbnails.")
+        out("")
+        out("How to install:")
+        out("  - Windows: Download from https://ffmpeg.org/download.html and add to your PATH.")
+        out("  - macOS (using Homebrew): `brew install ffmpeg`")
+        out("  - Linux (Debian/Ubuntu): `sudo apt update && sudo apt install ffmpeg`")
+        out("  - Linux (Fedora/CentOS): `sudo dnf install ffmpeg`")
         sys.exit(1)
 
-# Run dependency checks
 check_and_install_dependencies()
-check_ffmpeg()  # Check for ffmpeg after Python packages are confirmed
+check_ffmpeg()
 
-# --- Application Setup ---
 from flask import Flask, render_template, send_from_directory, request, jsonify, g, abort
 from rich.console import Console
 import click
@@ -67,13 +80,13 @@ import click
 console = Console()
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
+_share_enabled = False
+
 def setup_directories():
-    """Creates media, data, and thumbnails directories if they don't exist."""
     os.makedirs(config.MEDIA_FOLDER, exist_ok=True)
     os.makedirs(config.DATA_FOLDER, exist_ok=True)
-    os.makedirs(config.THUMBNAIL_FOLDER, exist_ok=True) # Ensure thumbnail folder exists
+    os.makedirs(config.THUMBNAIL_FOLDER, exist_ok=True)
 
-# --- Helper and Logging Functions ---
 def log_activity(event_type, details):
     log_file_path = os.path.join(config.DATA_FOLDER, config.DATA_FILE)
     log_entry = {
@@ -93,129 +106,179 @@ def log_activity(event_type, details):
     except Exception as e:
         console.print(f"[bold red]Error logging activity:[/bold red] {e}")
 
-# UPDATED: File type checker now recognizes more video formats
 def get_file_type(filename):
     image_ext = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-    video_ext = ['.mp4', '.webm', '.ogg', '.mkv', '.mov', '.avi'] # Added more common video types
+    video_ext = ['.mp4', '.webm', '.ogg', '.mkv', '.mov', '.avi']
+    audio_ext = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma']
     _, ext = os.path.splitext(filename)
-    if ext.lower() in image_ext:
+    ext_lower = ext.lower()
+    if ext_lower in image_ext:
         return 'image'
-    if ext.lower() in video_ext:
+    if ext_lower in video_ext:
         return 'video'
+    if ext_lower in audio_ext:
+        return 'audio'
     return 'other'
 
-# NEW: Function to generate a thumbnail for a video file
+def get_mime_type(filename):
+    mime_type, _ = mimetypes.guess_type(filename)
+    return mime_type or 'application/octet-stream'
+
+def is_media_playable(file_type):
+    return file_type in ('video', 'audio')
+
 def generate_thumbnail(filename):
-    """Generates a 1-frame thumbnail for a video file using ffmpeg."""
     try:
-        # Define the source video path and the destination thumbnail path.
         source_path = os.path.join(config.MEDIA_FOLDER, filename)
-        # The thumbnail will have the same name as the video but with a .jpg extension.
         thumbnail_filename = f"{os.path.splitext(filename)[0]}.jpg"
         dest_path = os.path.join(config.THUMBNAIL_FOLDER, thumbnail_filename)
 
-        # If the thumbnail already exists, don't regenerate it.
         if os.path.exists(dest_path):
-            return os.path.join("thumbnails", thumbnail_filename).replace("\\", "/")
+            return "thumbnails/" + thumbnail_filename
 
-        # The ffmpeg command:
-        # -i: input file
-        # -ss: seek to the 1-second mark
-        # -vframes 1: extract only 1 frame
-        # -y: overwrite output file if it exists
-        # -loglevel error: only show errors, not the full verbose output
         command = [
-            'ffmpeg', '-i', source_path, '-ss', '00:00:01.000', 
+            'ffmpeg', '-i', source_path, '-ss', '00:00:01.000',
             '-vframes', '1', '-y', dest_path, '-loglevel', 'error'
         ]
-        
-        # Execute the command.
+
         subprocess.run(command, check=True)
-        
-        # Return the web-accessible path to the thumbnail.
-        return os.path.join("thumbnails", thumbnail_filename).replace("\\", "/")
+
+        return "thumbnails/" + thumbnail_filename
     except Exception as e:
-        # If ffmpeg fails (e.g., corrupt video), log the error and return None.
         console.print(f"[bold yellow]Warning:[/bold yellow] Could not generate thumbnail for '{filename}'. Reason: {e}")
         return None
 
 def get_file_size(filepath):
-    """Returns a human-readable file size string."""
     size_bytes = os.path.getsize(filepath)
-    if size_bytes < 1024: return f"{size_bytes} B"
-    elif size_bytes < 1024**2: return f"{size_bytes/1024:.1f} KB"
-    elif size_bytes < 1024**3: return f"{size_bytes/1024**2:.1f} MB"
-    else: return f"{size_bytes/1024**3:.1f} GB"
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 ** 2:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 ** 3:
+        return f"{size_bytes / 1024 ** 2:.1f} MB"
+    else:
+        return f"{size_bytes / 1024 ** 3:.1f} GB"
 
-# --- Flask Routes ---
 
-# NEW: This function runs before every request to check the API key for web access
+def get_file_icon(file_type):
+    return {
+        'video': 'fa-file-video',
+        'audio': 'fa-file-audio',
+        'image': 'fa-file-image',
+        'other': 'fa-file-alt',
+    }.get(file_type, 'fa-file-alt')
+
+
 @app.before_request
-def check_access_key():
-    """If enabled in config, validates the API key for web pages."""
-    # Only run this check if the feature is enabled in the config.
+def before_request_func():
+    g.share_api = _share_enabled
     if config.WEBSITE_ACCESS_KEY_REQUIRED:
-        # Define which endpoints are protected. We don't want to protect static files or media downloads.
         protected_endpoints = ['index', 'player']
         if request.endpoint in protected_endpoints:
-            # Get the key from the URL query parameter (?key=...)
             provided_key = request.args.get('key')
-            # If the key doesn't match, block access with a 401 Unauthorized error.
             if provided_key != config.API_KEY:
                 log_activity("web_access_denied", {"reason": "Invalid or missing web access key"})
                 abort(401, description="Unauthorized: A valid access key is required.")
 
+
+@app.errorhandler(401)
+def unauthorized_error(e):
+    return render_template('error.html', code=401, message="Unauthorized: A valid access key is required."), 401
+
+
+@app.errorhandler(403)
+def forbidden_error(e):
+    return render_template('error.html', code=403, message="Forbidden: You don't have permission to access this resource."), 403
+
+
+@app.errorhandler(404)
+def not_found_error(e):
+    return render_template('error.html', code=404, message="Page not found."), 404
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    return render_template('error.html', code=500, message="Internal server error."), 500
+
+
 @app.route('/')
 def index():
-    """The main route that renders the homepage."""
     log_activity("page_view", {"page": "index"})
     files_to_share = []
     try:
         allowed_exts = [ext.strip() for ext in config.ALLOWED_EXTENSIONS.lower().split(' ') if ext]
-        
-        for filename in sorted(os.listdir(config.MEDIA_FOLDER)):
-            if not allowed_exts or any(filename.lower().endswith(ext) for ext in allowed_exts):
-                filepath = os.path.join(config.MEDIA_FOLDER, filename)
-                file_type = get_file_type(filename)
-                
-                # Prepare file information dictionary
-                file_info = {
-                    "name": filename,
-                    "type": file_type,
-                    "size": get_file_size(filepath),
-                    "is_video": file_type == 'video',
-                    "thumbnail": None # Default thumbnail to None
-                }
 
-                # If the file is a video, attempt to generate a thumbnail for it.
-                if file_info["is_video"]:
-                    file_info["thumbnail"] = generate_thumbnail(filename)
-                
-                files_to_share.append(file_info)
+        for filename in sorted(os.listdir(config.MEDIA_FOLDER)):
+            filepath = os.path.join(config.MEDIA_FOLDER, filename)
+
+            if not os.path.isfile(filepath):
+                continue
+
+            if allowed_exts and not any(filename.lower().endswith(ext) for ext in allowed_exts):
+                continue
+
+            file_type = get_file_type(filename)
+
+            file_info = {
+                "name": filename,
+                "type": file_type,
+                "size": get_file_size(filepath),
+                "is_playable": is_media_playable(file_type),
+                "mime_type": get_mime_type(filename),
+                "icon": get_file_icon(file_type),
+                "thumbnail": None,
+            }
+
+            if file_type == 'video':
+                file_info["thumbnail"] = generate_thumbnail(filename)
+
+            files_to_share.append(file_info)
     except Exception as e:
         console.print(f"[bold red]Error reading media folder:[/bold red] {e}")
 
     return render_template('index.html', files=files_to_share)
 
-# NEW: Route for the dedicated video player page
+
 @app.route('/player/<filename>')
 def player(filename):
-    """Renders the video player page for a specific file."""
-    log_activity("video_play_request", {"filename": filename})
-    return render_template('player.html', filename=filename)
+    filepath = os.path.join(config.MEDIA_FOLDER, filename)
+
+    if not os.path.isfile(filepath):
+        abort(404)
+
+    file_type = get_file_type(filename)
+
+    if not is_media_playable(file_type):
+        abort(400)
+
+    mime_type = get_mime_type(filename)
+
+    log_activity("media_play_request", {"filename": filename, "type": file_type})
+
+    return render_template(
+        'player.html',
+        filename=filename,
+        file_type=file_type,
+        mime_type=mime_type,
+    )
+
 
 @app.route('/media/<filename>')
 def serve_media(filename):
-    """Serves the actual files from the media folder."""
+    filepath = os.path.join(config.MEDIA_FOLDER, filename)
+
+    if not os.path.isfile(filepath):
+        abort(404)
+
     log_activity("file_download_request", {"filename": filename})
     return send_from_directory(config.MEDIA_FOLDER, filename, as_attachment=False)
 
+
 @app.route('/api')
 def api_data():
-    """API endpoint to share all logged data."""
     if not g.get('share_api'):
         return jsonify({"error": "API is not enabled."}), 403
-    
+
     provided_key = request.args.get('key')
     if provided_key != config.API_KEY:
         log_activity("api_access_denied", {"reason": "Invalid or missing API key"})
@@ -231,21 +294,38 @@ def api_data():
     except Exception as e:
         return jsonify({"error": f"Could not retrieve data: {e}"}), 500
 
-# --- Command-Line Interface (CLI) ---
+
+def _self_uninstall():
+    console.print("[yellow]Uninstalling localfs...[/yellow]")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", "localfs"])
+        console.print("[green]localfs uninstalled successfully.[/green]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to uninstall localfs: {e}[/red]")
+
+    if os.path.isdir(config.DATA_FOLDER):
+        shutil.rmtree(config.DATA_FOLDER, ignore_errors=True)
+        console.print(f"[green]Removed data directory: {config.DATA_FOLDER}[/green]")
+
+    sys.exit(0)
+
+
 @click.command()
 @click.option('-s', '--share', is_flag=True, help='Enable the API endpoint to share logged data.')
-def main(share):
+@click.option('--selfuninstall', is_flag=True, help='Uninstall localfs and clean up configuration.')
+def main(share, selfuninstall):
     """localfs: A simple local file sharing service."""
-    setup_directories()
+    if selfuninstall:
+        _self_uninstall()
+        return
 
-    @app.before_request
-    def before_request_func():
-        g.share_api = share
+    global _share_enabled
+    _share_enabled = share
+    setup_directories()
 
     console.print("[bold green]Starting localfs server...[/bold green]")
     console.print(f" * Media Folder: [cyan]{os.path.abspath(config.MEDIA_FOLDER)}[/cyan]")
-    
-    # UPDATED: Display the correct access URL based on security settings
+
     access_url = f"http://127.0.0.1:{config.PORT}"
     if config.WEBSITE_ACCESS_KEY_REQUIRED:
         console.print(f" * Website Access Key: [bold magenta]{config.API_KEY}[/bold magenta]")
@@ -258,10 +338,11 @@ def main(share):
         console.print(f" * API Key: [bold magenta]{config.API_KEY}[/bold magenta]")
     else:
         console.print(f" * API Enabled: [bold red]No[/bold red]")
-        
+
     console.print("[yellow]Press CTRL+C to stop the server.[/yellow]")
 
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG, threaded=True)
+
 
 if __name__ == '__main__':
     main()
