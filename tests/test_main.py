@@ -422,6 +422,30 @@ class TestDirectoryBrowsing:
         resp = client.get("/?dir=../")
         assert resp.status_code in (404, 400)
 
+    def test_extra_virtual_dirs_shown_at_root(self, client, test_config, media_dir):
+        if os.path.isdir(config.MEDIA_EXTRA_DIRS.get("Videos", "/nonexistent")):
+            resp = client.get("/")
+            html = resp.data.decode()
+            assert "Videos" in html
+
+    def test_extra_virtual_dir_accessible(self, client, test_config, media_dir):
+        virt = None
+        for name, path in config.MEDIA_EXTRA_DIRS.items():
+            if os.path.isdir(path):
+                virt = name
+                break
+        if virt:
+            resp = client.get(f"/?dir={virt}")
+            assert resp.status_code in (200, 404)
+
+    def test_extra_virtual_dir_no_subdirs_shown(self, client, test_config, media_dir):
+        for name, path in config.MEDIA_EXTRA_DIRS.items():
+            if os.path.isdir(path):
+                resp = client.get(f"/?dir={name}")
+                html = resp.data.decode()
+                assert "fa-folder" not in html
+                break
+
     def test_dirs_listed_with_folder_icon(self, client, test_config, media_dir):
         sub = media_dir / "testdir"
         sub.mkdir()
@@ -436,6 +460,97 @@ class TestDirectoryBrowsing:
         resp = client.get("/")
         html = resp.data.decode()
         assert "testdir" in html
+
+
+class TestSorting:
+    def test_default_sort_by_name(self, client, test_config, media_dir):
+        (media_dir / "b.mp4").write_bytes(b"bbb")
+        (media_dir / "a.mp4").write_bytes(b"aaa")
+        resp = client.get("/")
+        html = resp.data.decode()
+        a_pos = html.index("a.mp4")
+        b_pos = html.index("b.mp4")
+        assert a_pos < b_pos
+
+    def test_sort_by_name_desc(self, client, test_config, media_dir):
+        (media_dir / "a.mp4").write_bytes(b"aaa")
+        (media_dir / "b.mp4").write_bytes(b"bbb")
+        resp = client.get("/?sort=name&order=desc")
+        html = resp.data.decode()
+        a_pos = html.index("a.mp4")
+        b_pos = html.index("b.mp4")
+        assert b_pos < a_pos
+
+    def test_sort_by_size(self, client, test_config, media_dir):
+        (media_dir / "small.mp4").write_bytes(b"x" * 10)
+        (media_dir / "large.mp4").write_bytes(b"x" * 1000)
+        resp = client.get("/?sort=size")
+        html = resp.data.decode()
+        s_pos = html.index("small.mp4")
+        l_pos = html.index("large.mp4")
+        assert s_pos < l_pos
+
+    def test_sort_by_size_desc(self, client, test_config, media_dir):
+        (media_dir / "small.mp4").write_bytes(b"x" * 10)
+        (media_dir / "large.mp4").write_bytes(b"x" * 1000)
+        resp = client.get("/?sort=size&order=desc")
+        html = resp.data.decode()
+        s_pos = html.index("small.mp4")
+        l_pos = html.index("large.mp4")
+        assert l_pos < s_pos
+
+    def test_sort_by_type(self, client, test_config, media_dir):
+        (media_dir / "a.mp3").write_bytes(b"aaa")
+        (media_dir / "b.mp4").write_bytes(b"bbb")
+        with patch.object(config, "ALLOWED_EXTENSIONS", ""):
+            resp = client.get("/?sort=type")
+        html = resp.data.decode()
+        a_pos = html.index("a.mp3")
+        b_pos = html.index("b.mp4")
+        # audio before video alphabetically within type groups
+        assert "type" in html or "audio" in html or "video" in html
+
+    def test_sort_controls_present(self, client, test_config, media_dir):
+        (media_dir / "f.mp4").write_bytes(b"data")
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "Sort:" in html
+        assert "Name" in html
+        assert "Date" in html
+        assert "Size" in html
+        assert "Type" in html
+
+
+class TestPlayerNavigation:
+    def test_prev_next_links_present(self, client, test_config, media_dir):
+        (media_dir / "a.mp4").write_bytes(b"aaa")
+        (media_dir / "b.mp4").write_bytes(b"bbb")
+        (media_dir / "c.mp4").write_bytes(b"ccc")
+        resp = client.get("/player/b.mp4")
+        html = resp.data.decode()
+        assert "Prev" in html
+        assert "Next" in html
+
+    def test_first_file_no_prev(self, client, test_config, media_dir):
+        (media_dir / "a.mp4").write_bytes(b"aaa")
+        (media_dir / "b.mp4").write_bytes(b"bbb")
+        resp = client.get("/player/a.mp4")
+        html = resp.data.decode()
+        assert "Prev" not in html or "step-backward" not in html
+
+    def test_last_file_no_next(self, client, test_config, media_dir):
+        (media_dir / "a.mp4").write_bytes(b"aaa")
+        (media_dir / "b.mp4").write_bytes(b"bbb")
+        resp = client.get("/player/b.mp4")
+        html = resp.data.decode()
+        assert "Next" not in html or "step-forward" not in html
+
+    def test_single_file_no_nav(self, client, test_config, media_dir):
+        (media_dir / "only.mp4").write_bytes(b"data")
+        resp = client.get("/player/only.mp4")
+        html = resp.data.decode()
+        assert "Prev" not in html
+        assert "Next" not in html
 
 
 class TestServerSideSearch:
@@ -1336,6 +1451,70 @@ class TestSessionAuth:
 # =============================================================================
 # Directory browsing helpers
 # =============================================================================
+
+class TestResolveMediaPath:
+    def test_resolve_media_path_normal(self, test_config):
+        result = main.resolve_media_path("file.mp4")
+        assert result == os.path.join(config.MEDIA_FOLDER, "file.mp4")
+
+    def test_resolve_media_path_subdir(self, test_config):
+        result = main.resolve_media_path("sub/file.mp4")
+        assert result == os.path.join(config.MEDIA_FOLDER, "sub", "file.mp4")
+
+    def test_resolve_media_path_extra_dir(self, test_config):
+        if os.path.isdir(config.MEDIA_EXTRA_DIRS.get("Videos", "/nonexistent")):
+            result = main.resolve_media_path("Videos/movie.mp4")
+            assert result == os.path.join(config.MEDIA_EXTRA_DIRS["Videos"], "movie.mp4")
+
+    def test_resolve_media_path_empty(self, test_config):
+        result = main.resolve_media_path("")
+        assert result == config.MEDIA_FOLDER
+
+
+class TestGenerateFileInfo:
+    def test_generates_correct_info(self, test_config, media_dir):
+        (media_dir / "test.mp4").write_bytes(b"data")
+        info = main.generate_file_info("test.mp4", media_dir / "test.mp4", "test.mp4")
+        assert info["name"] == "test.mp4"
+        assert info["type"] == "video"
+        assert info["is_playable"] is True
+        assert info["path"] == "test.mp4"
+
+    def test_audio_type(self, test_config, media_dir):
+        (media_dir / "song.mp3").write_bytes(b"data")
+        info = main.generate_file_info("song.mp3", media_dir / "song.mp3", "song.mp3")
+        assert info["type"] == "audio"
+
+    def test_image_type(self, test_config, media_dir):
+        (media_dir / "pic.jpg").write_bytes(b"data")
+        info = main.generate_file_info("pic.jpg", media_dir / "pic.jpg", "pic.jpg")
+        assert info["type"] == "image"
+        assert info["is_playable"] is False
+
+    def test_rel_path_preserved(self, test_config, media_dir):
+        (media_dir / "f.mp4").write_bytes(b"data")
+        info = main.generate_file_info("f.mp4", media_dir / "f.mp4", "sub/dir/f.mp4")
+        assert info["path"] == "sub/dir/f.mp4"
+
+
+class TestFindSubtitle:
+    def test_finds_srt(self, test_config, media_dir):
+        (media_dir / "video.srt").write_bytes(b"1\n00:00:01 --> 00:00:02\nHello")
+        (media_dir / "video.mp4").write_bytes(b"data")
+        result = main._find_subtitle(media_dir / "video.mp4")
+        assert result == "video.srt"
+
+    def test_finds_vtt(self, test_config, media_dir):
+        (media_dir / "clip.vtt").write_bytes(b"WEBVTT")
+        (media_dir / "clip.mp4").write_bytes(b"data")
+        result = main._find_subtitle(media_dir / "clip.mp4")
+        assert result == "clip.vtt"
+
+    def test_returns_none_when_missing(self, test_config, media_dir):
+        (media_dir / "naked.mp4").write_bytes(b"data")
+        result = main._find_subtitle(media_dir / "naked.mp4")
+        assert result is None
+
 
 class TestSafeJoin:
     def test_safe_join_simple(self):

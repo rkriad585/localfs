@@ -2,6 +2,7 @@
 
 ## Completed
 
+### Session 1
 - [x] Core Flask app with file listing, video/audio player, download
 - [x] Access key authentication for web interface
 - [x] JSON API endpoint for activity logs
@@ -22,70 +23,51 @@
 - [x] Settings page with theme picker
 - [x] All runtime data stored in `~/.config/neostore/localfs/`
 
+### Session 2
+- [x] CLI flags: `--port`, `--host`, `--key`, `--media`, `--no-auth`, `--version`, `--theme`, `--mode`
+- [x] Directory browsing with breadcrumbs and parent navigation
+- [x] File operations: upload (drag & drop, auto-rename), delete, rename
+- [x] Server-side search: `?q=name`, `?type=video|audio|image`, `?size=small|medium|large`
+- [x] User management: login/logout, session auth, hashed passwords, `--add-user`, `--remove-user`
+
+### Session 3
+- [x] Default media folder: `~/Downloads` instead of internal `media/`
+- [x] Extra media directories: `~/Videos`, `~/Music` shown as virtual dirs at root
+- [x] Playlist navigation: prev/next buttons on player page
+- [x] Keyboard shortcuts: `n` next, `p` previous, `f` fullscreen, arrows
+- [x] Subtitle support: SRT/VTT/ASS files auto-detected for video
+- [x] Sort controls: `?sort=name|date|size|type` with `&order=asc|desc`
+- [x] `resolve_media_path()` helper for multi-directory file serving
+- [x] 304 tests
+
 ---
 
 ## Short-term (Next)
 
-### 1. CLI improvements
-
-| Feature | Description |
-|---|---|
-| `--port PORT` | Override the port at runtime |
-| `--host HOST` | Override the bind address |
-| `--key KEY` | Set a specific access key for this session |
-| `--media PATH` | Point to a different media directory |
-| `--no-auth` | Disable access key for this session |
-| `--version` | Print version from `.version` |
-| `--theme THEME` | Start with a specific theme |
-| `--mode MODE` | Start in dark/light mode |
-
-### 2. User management
-
-- Add user accounts with passwords (not just a shared access key)
-- Per-user access levels: admin, viewer, downloader
-- Login page with session cookies
-
-### 3. Directory browsing
-
-- Navigate subdirectories inside `media/`
-- Breadcrumb navigation
-- Per-directory views
-
-### 4. File operations
-
-- Upload files through the web UI (drag & drop)
-- Delete files from the web UI (with confirmation)
-- Rename files
-- Create directories
-- Multi-file select and batch operations
-
-### 5. Search improvements
-
-- Server-side search (instead of client-side only)
-- Search by file type (video/audio/image)
-- Search by date, size
-- Full-text search in filenames with fuzzy matching
+- [x] CLI flags: `--port`, `--host`, `--key`, `--media`, `--no-auth`, `--version`, `--theme`, `--mode`
+- [x] User management: login/logout, session auth, `--add-user`, `--remove-user`
+- [x] Directory browsing with breadcrumb navigation
+- [x] File operations: upload, delete, rename
+- [x] Search: server-side `?q=`, `?type=`, `?size=` filters
 
 ---
 
 ## Medium-term
 
-### 6. Media enhancements
-
-- Subtitle support in video player (SRT, VTT)
-- Playlist support (auto-play next video in directory)
-- Streaming quality selection (if ffmpeg can transcode)
-- Audio-only mode for music streaming
-- Picture-in-picture for videos
-
-### 7. UI/UX improvements
+### 6. UI/UX refinements
 
 - Mobile-responsive layout enhancements
 - Dark/light mode toggle in the header (not just settings)
 - Grid/list view toggle
-- Sort by name, date, size, type
+- [x] Sort by name, date, size, type
+- [x] Keyboard shortcuts (n: next, p: previous, f: fullscreen)
+- [x] Subtitle support (SRT/VTT)
+- [x] Playlist auto-play-next/prev
 - Pagination for large libraries (1000+ files)
-- Keyboard shortcuts (n: next, p: previous, f: fullscreen)
+- Multi-file select and batch operations
+- Create directories from the UI
+- Audio-only mode for music streaming
+- Picture-in-picture for videos
 
 ### 8. Thumbnail improvements
 

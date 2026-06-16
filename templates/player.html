@@ -1,22 +1,54 @@
 {% extends "base.html" %}
 {% block title %}Playing: {{ filename }}{% endblock %}
+{% block head %}
+<style>
+    .nav-btn {
+        transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    }
+    .nav-btn:hover {
+        transform: scale(1.05);
+    }
+</style>
+{% endblock %}
 {% block content %}
 <header class="w-full max-w-6xl mx-auto px-4 py-4">
-    <a href="{{ url_for('index', key=request.args.get('key'), dir=request.args.get('dir')) }}"
-       class="text-accent hover:text-accent-hover transition-colors">
-        &larr; Back to Library
-    </a>
+    <div class="flex items-center justify-between">
+        <a href="{{ url_for('index', key=request.args.get('key'), dir=request.args.get('dir')) }}"
+           class="text-accent hover:text-accent-hover transition-colors">
+            &larr; Back to Library
+        </a>
+        <div class="flex space-x-2">
+            {% if prev_file %}
+            <a href="{{ url_for('player', filename=prev_file, key=request.args.get('key'), dir=request.args.get('dir')) }}"
+               class="nav-btn bg-card text-primary px-3 py-1 rounded-lg shadow-card hover:bg-secondary transition-colors text-sm"
+               title="Previous (n)">
+                <i class="fas fa-step-backward mr-1"></i> Prev
+            </a>
+            {% endif %}
+            {% if next_file %}
+            <a href="{{ url_for('player', filename=next_file, key=request.args.get('key'), dir=request.args.get('dir')) }}"
+               class="nav-btn bg-card text-primary px-3 py-1 rounded-lg shadow-card hover:bg-secondary transition-colors text-sm"
+               title="Next (p)">
+                Next <i class="fas fa-step-forward ml-1"></i>
+            </a>
+            {% endif %}
+        </div>
+    </div>
     <h1 class="text-2xl font-bold text-primary truncate mt-2" title="{{ filename }}">{{ filename }}</h1>
 </header>
 
 <div class="w-full max-w-6xl mx-auto p-4 flex-grow flex items-center justify-center min-h-[70vh]">
     {% if file_type == 'video' %}
     <video
+        id="mediaPlayer"
         controls
         autoplay
         preload="auto"
         class="w-full h-full max-h-[80vh] rounded-lg shadow-card bg-black">
         <source src="{{ url_for('serve_media', filename=filename) }}" type="{{ mime_type }}">
+        {% if subtitle %}
+        <track src="{{ url_for('serve_media', filename=subtitle) }}" kind="subtitles" srclang="en" label="Subtitles" default>
+        {% endif %}
         Your browser does not support the video tag.
     </video>
     {% elif file_type == 'audio' %}
@@ -24,6 +56,7 @@
         <i class="fas fa-music text-6xl text-accent mb-6"></i>
         <h2 class="text-xl font-semibold text-primary truncate mb-6">{{ filename }}</h2>
         <audio
+            id="mediaPlayer"
             controls
             autoplay
             preload="auto"
@@ -34,4 +67,32 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    {% if prev_file %}
+    if (e.key === 'p' || e.key === 'P' || e.key === 'ArrowLeft') {
+        window.location.href = '{{ url_for("player", filename=prev_file, key=request.args.get("key"), dir=request.args.get("dir")) }}';
+    }
+    {% endif %}
+    {% if next_file %}
+    if (e.key === 'n' || e.key === 'N' || e.key === 'ArrowRight') {
+        window.location.href = '{{ url_for("player", filename=next_file, key=request.args.get("key"), dir=request.args.get("dir")) }}';
+    }
+    {% endif %}
+    if (e.key === 'f' || e.key === 'F') {
+        var player = document.getElementById('mediaPlayer');
+        if (player) {
+            if (player.requestFullscreen) {
+                player.requestFullscreen();
+            } else if (player.webkitRequestFullscreen) {
+                player.webkitRequestFullscreen();
+            } else if (player.msRequestFullscreen) {
+                player.msRequestFullscreen();
+            }
+        }
+    }
+});
+</script>
 {% endblock %}

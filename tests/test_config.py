@@ -22,7 +22,13 @@ class TestConfigValues:
         assert config.BASE_DIR.startswith(home)
 
     def test_media_folder(self):
-        assert config.MEDIA_FOLDER == os.path.join(config.BASE_DIR, "media")
+        assert config.MEDIA_FOLDER == os.path.join(os.path.expanduser("~"), "Downloads")
+
+    def test_media_extra_dirs(self):
+        assert "Videos" in config.MEDIA_EXTRA_DIRS
+        assert "Music" in config.MEDIA_EXTRA_DIRS
+        assert config.MEDIA_EXTRA_DIRS["Videos"] == os.path.join(os.path.expanduser("~"), "Videos")
+        assert config.MEDIA_EXTRA_DIRS["Music"] == os.path.join(os.path.expanduser("~"), "Music")
 
     def test_data_folder(self):
         assert config.DATA_FOLDER == os.path.join(config.BASE_DIR, "data")

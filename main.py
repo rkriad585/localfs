@@ -73,7 +73,7 @@ def check_ffmpeg():
 check_and_install_dependencies()
 check_ffmpeg()
 
-from flask import Flask, render_template, send_from_directory, request, jsonify, g, abort, redirect, url_for, session
+from flask import Flask, render_template, send_from_directory, send_file, request, jsonify, g, abort, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from rich.console import Console
 import click
@@ -192,7 +192,7 @@ def is_media_playable(file_type):
 
 def generate_thumbnail(filename):
     try:
-        source_path = safe_join(config.MEDIA_FOLDER, filename)
+        source_path = resolve_media_path(filename)
         if source_path is None:
             return None
 
@@ -245,6 +245,54 @@ def get_file_icon(file_type):
         'image': 'fa-file-image',
         'other': 'fa-file-alt',
     }.get(file_type, 'fa-file-alt')
+
+
+def resolve_media_path(relative_path):
+    if not relative_path:
+        return config.MEDIA_FOLDER
+    parts = relative_path.replace("\\", "/").split("/")
+    if len(parts) > 1 and parts[0] in config.MEDIA_EXTRA_DIRS:
+        virtual_dir = parts[0]
+        real_base = config.MEDIA_EXTRA_DIRS[virtual_dir]
+        inner = "/".join(parts[1:])
+        return safe_join(real_base, inner) if inner else real_base
+    return safe_join(config.MEDIA_FOLDER, relative_path)
+
+
+def list_media_files(directory, relative_dir=""):
+    files = []
+    dirs = []
+    try:
+        allowed_exts = [e.strip() for e in config.ALLOWED_EXTENSIONS.lower().split(" ") if e]
+        for entry in sorted(os.listdir(directory)):
+            filepath = os.path.join(directory, entry)
+            rel_path = f"{relative_dir}/{entry}" if relative_dir else entry
+            if os.path.isdir(filepath):
+                dirs.append({"name": entry, "path": rel_path})
+                continue
+            if allowed_exts and not any(entry.lower().endswith(e) for e in allowed_exts):
+                continue
+            files.append(entry)
+    except OSError:
+        pass
+    return files, dirs
+
+
+def generate_file_info(entry, filepath, rel_path):
+    file_type = get_file_type(entry)
+    info = {
+        "name": entry,
+        "path": rel_path,
+        "type": file_type,
+        "size": get_file_size(filepath),
+        "is_playable": is_media_playable(file_type),
+        "mime_type": get_mime_type(entry),
+        "icon": get_file_icon(file_type),
+        "thumbnail": None,
+    }
+    if file_type == "video":
+        info["thumbnail"] = generate_thumbnail(rel_path)
+    return info
 
 
 def safe_join(directory, *path_parts):
@@ -323,28 +371,37 @@ def index():
     search_q = request.args.get("q", "").lower()
     search_type = request.args.get("type", "").lower()
     search_size = request.args.get("size", "").lower()
+    sort_by = request.args.get("sort", "name")
+    sort_order = request.args.get("order", "asc")
 
-    if relative_dir:
+    if not relative_dir:
+        for virt_name in sorted(config.MEDIA_EXTRA_DIRS):
+            if os.path.isdir(config.MEDIA_EXTRA_DIRS[virt_name]):
+                if not search_q or search_q in virt_name.lower():
+                    dirs.append({"name": virt_name, "path": virt_name})
+        base = config.MEDIA_FOLDER
+    elif relative_dir in config.MEDIA_EXTRA_DIRS:
+        base = config.MEDIA_EXTRA_DIRS[relative_dir]
+    else:
         base = safe_join(config.MEDIA_FOLDER, relative_dir)
         if base is None or not os.path.isdir(base):
             abort(404)
-    else:
-        base = config.MEDIA_FOLDER
 
     try:
-        allowed_exts = [ext.strip() for ext in config.ALLOWED_EXTENSIONS.lower().split(' ') if ext]
-
+        allowed_exts = [e.strip() for e in config.ALLOWED_EXTENSIONS.lower().split(" ") if e]
         for entry in sorted(os.listdir(base)):
             filepath = os.path.join(base, entry)
             rel_path = f"{relative_dir}/{entry}" if relative_dir else entry
 
             if os.path.isdir(filepath):
+                if relative_dir in config.MEDIA_EXTRA_DIRS:
+                    continue
                 if search_q and search_q not in entry.lower():
                     continue
                 dirs.append({"name": entry, "path": rel_path})
                 continue
 
-            if allowed_exts and not any(entry.lower().endswith(ext) for ext in allowed_exts):
+            if allowed_exts and not any(entry.lower().endswith(e) for e in allowed_exts):
                 continue
 
             file_type = get_file_type(entry)
@@ -354,73 +411,118 @@ def index():
             if search_type and file_type != search_type:
                 continue
             if search_size:
-                size_bytes = os.path.getsize(filepath)
-                if search_size == "small" and size_bytes >= 1024 * 1024:
+                sz = os.path.getsize(filepath)
+                if search_size == "small" and sz >= 1024 * 1024:
                     continue
-                if search_size == "medium" and not (1024 * 1024 <= size_bytes < 100 * 1024 * 1024):
+                if search_size == "medium" and not (1024 * 1024 <= sz < 100 * 1024 * 1024):
                     continue
-                if search_size == "large" and size_bytes < 100 * 1024 * 1024:
+                if search_size == "large" and sz < 100 * 1024 * 1024:
                     continue
 
-            file_info = {
-                "name": entry,
-                "path": rel_path,
-                "type": file_type,
-                "size": get_file_size(filepath),
-                "is_playable": is_media_playable(file_type),
-                "mime_type": get_mime_type(entry),
-                "icon": get_file_icon(file_type),
-                "thumbnail": None,
-            }
+            info = generate_file_info(entry, filepath, rel_path)
+            files_to_share.append(info)
 
-            if file_type == 'video':
-                file_info["thumbnail"] = generate_thumbnail(rel_path)
-
-            files_to_share.append(file_info)
+        if sort_by == "size":
+            def _sort_key(f):
+                try:
+                    return os.path.getsize(os.path.join(base, f["name"]))
+                except OSError:
+                    return 0
+            files_to_share.sort(key=_sort_key, reverse=(sort_order == "desc"))
+        elif sort_by == "type":
+            files_to_share.sort(key=lambda f: (f["type"], f["name"]), reverse=(sort_order == "desc"))
+        elif sort_by == "date":
+            def _sort_key(f):
+                try:
+                    return os.path.getmtime(os.path.join(base, f["name"]))
+                except OSError:
+                    return 0
+            files_to_share.sort(key=_sort_key, reverse=(sort_order == "desc"))
+        else:
+            files_to_share.sort(key=lambda f: f["name"].lower(), reverse=(sort_order == "desc"))
     except Exception as e:
         console.print(f"[bold red]Error reading media folder:[/bold red] {e}")
 
     crumbs = build_breadcrumbs(relative_dir)
     parent = parent_dir(relative_dir)
 
-    return render_template('index.html', files=files_to_share, dirs=dirs,
+    return render_template("index.html", files=files_to_share, dirs=dirs,
                            breadcrumbs=crumbs, parent_dir=parent, current_dir=relative_dir,
-                           search_q=search_q, search_type=search_type, search_size=search_size)
+                           search_q=search_q, search_type=search_type, search_size=search_size,
+                           sort_by=sort_by, sort_order=sort_order)
 
 
 @app.route('/player/<path:filename>')
 def player(filename):
-    filepath = safe_join(config.MEDIA_FOLDER, filename)
+    filepath = resolve_media_path(filename)
 
     if filepath is None or not os.path.isfile(filepath):
         abort(404)
 
     file_type = get_file_type(filename)
-
     if not is_media_playable(file_type):
         abort(400)
 
     mime_type = get_mime_type(filename)
 
+    base_dir = os.path.dirname(filepath)
+    dir_files = []
+    try:
+        allowed_exts = [e.strip() for e in config.ALLOWED_EXTENSIONS.lower().split(" ") if e]
+        for entry in sorted(os.listdir(base_dir)):
+            if not os.path.isfile(os.path.join(base_dir, entry)):
+                continue
+            if allowed_exts and not any(entry.lower().endswith(e) for e in allowed_exts):
+                continue
+            if get_file_type(entry) != file_type:
+                continue
+            dir_files.append(entry)
+    except OSError:
+        pass
+
+    current_i = dir_files.index(os.path.basename(filename)) if os.path.basename(filename) in dir_files else -1
+    prev_file = dir_files[current_i - 1] if current_i > 0 else None
+    next_file = dir_files[current_i + 1] if current_i != -1 and current_i < len(dir_files) - 1 else None
+
+    dir_prefix = os.path.dirname(filename)
+    if prev_file:
+        prev_file = f"{dir_prefix}/{prev_file}" if dir_prefix else prev_file
+    if next_file:
+        next_file = f"{dir_prefix}/{next_file}" if dir_prefix else next_file
+
+    subtitle = _find_subtitle(filepath)
+
     log_activity("media_play_request", {"filename": filename, "type": file_type})
 
     return render_template(
-        'player.html',
+        "player.html",
         filename=filename,
         file_type=file_type,
         mime_type=mime_type,
+        prev_file=prev_file,
+        next_file=next_file,
+        subtitle=subtitle,
     )
+
+
+def _find_subtitle(filepath):
+    base = os.path.splitext(filepath)[0]
+    for ext in (".srt", ".vtt", ".ass", ".ssa"):
+        sub_path = base + ext
+        if os.path.isfile(sub_path):
+            return os.path.basename(sub_path)
+    return None
 
 
 @app.route('/media/<path:filename>')
 def serve_media(filename):
-    filepath = safe_join(config.MEDIA_FOLDER, filename)
+    filepath = resolve_media_path(filename)
 
     if filepath is None or not os.path.isfile(filepath):
         abort(404)
 
     log_activity("file_download_request", {"filename": filename})
-    return send_from_directory(config.MEDIA_FOLDER, filename, as_attachment=False)
+    return send_file(filepath)
 
 
 @app.route('/thumbnails/<path:filename>')
@@ -430,7 +532,7 @@ def serve_thumbnail(filename):
     if filepath is None or not os.path.isfile(filepath):
         abort(404)
 
-    return send_from_directory(config.THUMBNAIL_FOLDER, filename)
+    return send_file(filepath)
 
 
 @app.route('/api')

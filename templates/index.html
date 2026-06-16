@@ -80,6 +80,23 @@
         </form>
     </div>
 
+    <div class="mb-4 flex items-center justify-end space-x-2 text-sm">
+        <span class="text-muted">Sort:</span>
+        {% for key, label in [("name","Name"),("date","Date"),("size","Size"),("type","Type")] %}
+            {% if sort_by == key %}
+                <a href="{{ url_for('index', key=request.args.get('key'), dir=current_dir, q=search_q, type=search_type, size=search_size, sort=key, order='desc' if sort_order == 'asc' else 'asc') }}"
+                   class="text-accent font-semibold px-2 py-1 rounded bg-secondary">
+                    {{ label }} {% if sort_order == 'asc' %}&uarr;{% else %}&darr;{% endif %}
+                </a>
+            {% else %}
+                <a href="{{ url_for('index', key=request.args.get('key'), dir=current_dir, q=search_q, type=search_type, size=search_size, sort=key, order='asc') }}"
+                   class="text-muted hover:text-accent px-2 py-1 rounded">
+                    {{ label }}
+                </a>
+            {% endif %}
+        {% endfor %}
+    </div>
+
     <div id="file-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {% if parent_dir is not none %}
         <div class="file-card bg-card rounded-lg overflow-hidden shadow-card flex flex-col cursor-pointer hover:bg-secondary transition-colors"

@@ -22,7 +22,11 @@ PORT = 5000
 DEBUG = True
 
 # --- Folder and File Paths ---
-MEDIA_FOLDER = os.path.join(BASE_DIR, "media")
+MEDIA_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads")
+MEDIA_EXTRA_DIRS = {
+    "Videos": os.path.join(os.path.expanduser("~"), "Videos"),
+    "Music": os.path.join(os.path.expanduser("~"), "Music"),
+}
 DATA_FOLDER = os.path.join(BASE_DIR, "data")
 DATA_FILE = "localfs-data.json"
 THUMBNAIL_FOLDER = os.path.join(BASE_DIR, "thumbnails")
