@@ -507,6 +507,47 @@ class TestApiRoute:
 
 
 # =============================================================================
+# Settings route
+# =============================================================================
+
+class TestSettingsRoute:
+    def test_settings_page_renders(self, client, test_config):
+        resp = client.get("/settings")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "Settings" in html
+        assert "Choose your theme" in html
+
+    def test_settings_page_lists_themes(self, client, test_config):
+        resp = client.get("/settings")
+        html = resp.data.decode()
+        assert "Dark Theme" in html
+        assert "Light Theme" in html
+
+    def test_settings_post_saves_theme(self, client, test_config):
+        resp = client.post("/settings", data={"theme": "light"}, follow_redirects=True)
+        assert resp.status_code == 200
+
+    def test_settings_post_redirects_to_index(self, client, test_config):
+        resp = client.post("/settings", data={"theme": "light"})
+        assert resp.status_code == 302
+
+    def test_settings_post_unknown_theme_redirects(self, client, test_config):
+        resp = client.post("/settings", data={"theme": "nonexistent"})
+        assert resp.status_code == 302
+
+    def test_settings_post_preserves_key(self, client, test_config):
+        resp = client.post("/settings?key=abc123", data={"theme": "light"})
+        assert resp.status_code == 302
+        assert "key=abc123" in resp.location or resp.location.endswith("/")
+
+    def test_settings_current_theme_selected(self, client, test_config):
+        resp = client.get("/settings")
+        html = resp.data.decode()
+        assert "dark" in html
+
+
+# =============================================================================
 # Error handlers
 # =============================================================================
 

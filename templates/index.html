@@ -1,82 +1,81 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>localfs - Local File Sharing</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <style>
-        .file-card {
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-        }
-        .file-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
-        }
-    </style>
-</head>
-<body class="bg-gray-100 font-sans">
-
-    <div class="container mx-auto px-4 py-8">
-        <header class="text-center mb-8">
-            <h1 class="text-4xl font-bold text-gray-800">localfs</h1>
-            <p class="text-gray-600 mt-2">Your personal media sharing hub.</p>
-        </header>
-
-        <div class="mb-8 max-w-2xl mx-auto">
-            <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <i class="fas fa-search text-gray-400"></i>
-                </div>
-                <input type="text" id="searchInput" class="block w-full bg-white border border-gray-300 rounded-full py-3 pl-10 pr-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search for files...">
-            </div>
+{% extends "base.html" %}
+{% block title %}localfs - Local File Sharing{% endblock %}
+{% block head %}
+<style>
+    .file-card {
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+    .file-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <header class="text-center mb-8 flex items-center justify-center gap-4">
+        <div>
+            <h1 class="text-4xl font-bold text-primary">localfs</h1>
+            <p class="text-muted mt-2">Your personal media sharing hub.</p>
         </div>
+        <a href="{{ url_for('settings', key=request.args.get('key')) if request.args.get('key') else url_for('settings') }}"
+           class="text-2xl text-muted hover:text-accent transition-colors" title="Settings">
+            <i class="fas fa-cog"></i>
+        </a>
+    </header>
 
-        <div id="file-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-
-            {% for file in files %}
-            <div class="file-card bg-white rounded-lg overflow-hidden shadow-md flex flex-col" data-filename="{{ file.name.lower() }}">
-                <a href="{% if file.is_playable %}{{ url_for('player', filename=file.name, key=request.args.get('key')) }}{% else %}#{% endif %}" class="block h-48 bg-gray-200 flex items-center justify-center overflow-hidden">
-                    {% if file.thumbnail %}
-                        <img src="{{ url_for('static', filename=file.thumbnail) }}" alt="Thumbnail for {{ file.name }}" class="object-cover h-full w-full">
-                    {% elif file.type == 'image' %}
-                        <img src="{{ url_for('serve_media', filename=file.name) }}" alt="{{ file.name }}" class="object-cover h-full w-full">
-                    {% else %}
-                        <i class="fas {{ file.icon }} text-6xl text-gray-400"></i>
-                    {% endif %}
-                </a>
-
-                <div class="p-4 flex flex-col flex-grow">
-                    <h3 class="text-lg font-semibold text-gray-800 truncate" title="{{ file.name }}">{{ file.name }}</h3>
-                    <p class="text-sm text-gray-500">{{ file.size }}</p>
-                    <div class="mt-4 flex-grow flex items-end">
-                        <div class="w-full flex space-x-2">
-                             {% if file.is_playable %}
-                                <a href="{{ url_for('player', filename=file.name, key=request.args.get('key')) }}"
-                                   class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg inline-block text-center">
-                                    <i class="fas fa-play mr-2"></i>Play
-                                </a>
-                            {% endif %}
-                            <a href="{{ url_for('serve_media', filename=file.name) }}" download
-                               class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg inline-block text-center">
-                                <i class="fas fa-download mr-2"></i>Download
-                            </a>
-                        </div>
-                    </div>
-                </div>
+    <div class="mb-8 max-w-2xl mx-auto">
+        <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="fas fa-search text-muted"></i>
             </div>
-            {% else %}
-                <p class="text-gray-500 col-span-full text-center">No files found. Add some to the 'media' folder!</p>
-            {% endfor %}
-        </div>
-
-        <div id="no-results" class="hidden text-center text-gray-500 mt-8">
-            <p>No files match your search.</p>
+            <input type="text" id="searchInput"
+                   class="block w-full bg-input border border-color rounded-full py-3 pl-10 pr-4 text-primary focus:outline-none focus:ring-2 ring-accent"
+                   placeholder="Search for files...">
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-</body>
-</html>
+    <div id="file-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {% for file in files %}
+        <div class="file-card bg-card rounded-lg overflow-hidden shadow-card flex flex-col"
+             data-filename="{{ file.name.lower() }}">
+            <a href="{% if file.is_playable %}{{ url_for('player', filename=file.name, key=request.args.get('key')) }}{% else %}#{% endif %}"
+               class="block h-48 bg-secondary flex items-center justify-center overflow-hidden">
+                {% if file.thumbnail %}
+                    <img src="{{ url_for('static', filename=file.thumbnail) }}" alt="Thumbnail for {{ file.name }}" class="object-cover h-full w-full">
+                {% elif file.type == 'image' %}
+                    <img src="{{ url_for('serve_media', filename=file.name) }}" alt="{{ file.name }}" class="object-cover h-full w-full">
+                {% else %}
+                    <i class="fas {{ file.icon }} text-6xl text-muted"></i>
+                {% endif %}
+            </a>
+
+            <div class="p-4 flex flex-col flex-grow">
+                <h3 class="text-lg font-semibold text-primary truncate" title="{{ file.name }}">{{ file.name }}</h3>
+                <p class="text-sm text-muted">{{ file.size }}</p>
+                <div class="mt-4 flex-grow flex items-end">
+                    <div class="w-full flex space-x-2">
+                        {% if file.is_playable %}
+                            <a href="{{ url_for('player', filename=file.name, key=request.args.get('key')) }}"
+                               class="btn-play flex-1">
+                                <i class="fas fa-play mr-2"></i>Play
+                            </a>
+                        {% endif %}
+                        <a href="{{ url_for('serve_media', filename=file.name) }}" download
+                           class="btn-download flex-1">
+                            <i class="fas fa-download mr-2"></i>Download
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+            <p class="text-muted col-span-full text-center">No files found. Add some to the 'media' folder!</p>
+        {% endfor %}
+    </div>
+
+    <div id="no-results" class="hidden text-center text-muted mt-8">
+        <p>No files match your search.</p>
+    </div>
+</div>
+{% endblock %}

@@ -73,14 +73,32 @@ def check_ffmpeg():
 check_and_install_dependencies()
 check_ffmpeg()
 
-from flask import Flask, render_template, send_from_directory, request, jsonify, g, abort
+from flask import Flask, render_template, send_from_directory, request, jsonify, g, abort, redirect, url_for
 from rich.console import Console
 import click
+
+import theme as theme_mod
 
 console = Console()
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
 _share_enabled = False
+
+theme_mod.load_config()
+
+
+@app.context_processor
+def inject_theme():
+    theme_name = theme_mod.CURRENT_THEME
+    theme_data = theme_mod.THEMES.get(theme_name)
+    css_vars = theme_mod.get_theme_vars()
+    return {
+        "current_theme": theme_name,
+        "theme_name": theme_name,
+        "themes": theme_mod.get_all_themes(),
+        "theme_css": css_vars,
+    }
+
 
 def setup_directories():
     os.makedirs(config.MEDIA_FOLDER, exist_ok=True)
@@ -173,7 +191,7 @@ def get_file_icon(file_type):
 def before_request_func():
     g.share_api = _share_enabled
     if config.WEBSITE_ACCESS_KEY_REQUIRED:
-        protected_endpoints = ['index', 'player']
+        protected_endpoints = ['index', 'player', 'settings']
         if request.endpoint in protected_endpoints:
             provided_key = request.args.get('key')
             if provided_key != config.API_KEY:
@@ -293,6 +311,22 @@ def api_data():
         return jsonify({"message": "No data logged yet."})
     except Exception as e:
         return jsonify({"error": f"Could not retrieve data: {e}"}), 500
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    if request.method == 'POST':
+        selected = request.form.get('theme', 'dark')
+        if selected in theme_mod.THEMES:
+            theme_mod.save_config(selected)
+            theme_mod.load_config()
+        key = request.args.get('key')
+        if key:
+            return redirect(url_for('index', key=key))
+        return redirect(url_for('index'))
+
+    theme_name = theme_mod.CURRENT_THEME
+    return render_template('settings.html', current_theme=theme_name, themes=theme_mod.get_all_themes())
 
 
 def _self_uninstall():

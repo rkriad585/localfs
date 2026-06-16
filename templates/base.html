@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}localfs{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <style>
+        .website-theme {
+            --bg-primary: {{ theme_css['bg-primary'] }};
+            --bg-secondary: {{ theme_css['bg-secondary'] }};
+            --bg-card: {{ theme_css['bg-card'] }};
+            --border: {{ theme_css['border'] }};
+            --text-muted: {{ theme_css['text-muted'] }};
+            --text-primary: {{ theme_css['text-primary'] }};
+            --accent: {{ theme_css.get('accent', '#3b82f6') }};
+            --accent-hover: {{ theme_css.get('accent_hover', '#2563eb') }};
+            --input-bg: {{ theme_css.get('input_bg', theme_css['bg-card']) }};
+            --shadow: {{ theme_css.get('shadow', 'rgba(0,0,0,0.1)') }};
+            --text-secondary: {{ theme_css.get('text_secondary', theme_css['text-primary']) }};
+        }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="website-theme bg-primary text-primary font-sans min-h-screen">
+    {% block content %}{% endblock %}
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

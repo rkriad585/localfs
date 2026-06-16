@@ -1,47 +1,36 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playing: {{ filename }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen font-sans">
+{% extends "base.html" %}
+{% block title %}Playing: {{ filename }}{% endblock %}
+{% block content %}
+<header class="w-full max-w-6xl mx-auto px-4 py-4">
+    <a href="{{ url_for('index', key=request.args.get('key')) }}" class="text-accent hover:text-accent-hover transition-colors">
+        &larr; Back to Library
+    </a>
+    <h1 class="text-2xl font-bold text-primary truncate mt-2" title="{{ filename }}">{{ filename }}</h1>
+</header>
 
-    <header class="w-full max-w-6xl px-4 py-2">
-        <a href="{{ url_for('index', key=request.args.get('key')) }}" class="text-blue-400 hover:text-blue-300">
-            &larr; Back to Library
-        </a>
-        <h1 class="text-2xl font-bold truncate mt-2" title="{{ filename }}">{{ filename }}</h1>
-    </header>
-
-    <div class="w-full max-w-6xl p-4 flex-grow flex items-center justify-center">
-        {% if file_type == 'video' %}
-        <video
+<div class="w-full max-w-6xl mx-auto p-4 flex-grow flex items-center justify-center min-h-[70vh]">
+    {% if file_type == 'video' %}
+    <video
+        controls
+        autoplay
+        preload="auto"
+        class="w-full h-full max-h-[80vh] rounded-lg shadow-card bg-black">
+        <source src="{{ url_for('serve_media', filename=filename) }}" type="{{ mime_type }}">
+        Your browser does not support the video tag.
+    </video>
+    {% elif file_type == 'audio' %}
+    <div class="w-full max-w-md bg-card rounded-lg p-8 shadow-card text-center">
+        <i class="fas fa-music text-6xl text-accent mb-6"></i>
+        <h2 class="text-xl font-semibold text-primary truncate mb-6">{{ filename }}</h2>
+        <audio
             controls
             autoplay
             preload="auto"
-            class="w-full h-full max-h-[80vh] rounded-lg shadow-2xl bg-black">
+            class="w-full">
             <source src="{{ url_for('serve_media', filename=filename) }}" type="{{ mime_type }}">
-            Your browser does not support the video tag.
-        </video>
-        {% elif file_type == 'audio' %}
-        <div class="w-full max-w-md bg-gray-800 rounded-lg p-8 shadow-2xl text-center">
-            <i class="fas fa-music text-6xl text-blue-400 mb-6" style="display:block;"></i>
-            <h2 class="text-xl font-semibold truncate mb-6">{{ filename }}</h2>
-            <audio
-                controls
-                autoplay
-                preload="auto"
-                class="w-full">
-                <source src="{{ url_for('serve_media', filename=filename) }}" type="{{ mime_type }}">
-                Your browser does not support the audio tag.
-            </audio>
-        </div>
-        {% endif %}
+            Your browser does not support the audio tag.
+        </audio>
     </div>
-
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
-</body>
-</html>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Settings - localfs{% endblock %}
+{% block head %}
+<style>
+    .theme-card { transition: transform 0.2s, box-shadow 0.2s; }
+    .theme-card:hover { transform: translateY(-2px); }
+    .theme-card.active { box-shadow: 0 0 0 3px var(--accent); }
+    .theme-card input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .theme-preview { display: flex; gap: 0.375rem; flex-wrap: wrap; align-items: center; }
+    .theme-preview span { width: 1.5rem; height: 1.5rem; border-radius: 9999px; display: inline-block; border: 2px solid rgba(255,255,255,0.15); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-5xl">
+    <header class="mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-primary">Settings</h1>
+            <p class="text-muted mt-1">Choose your theme</p>
+        </div>
+        <a href="{{ url_for('index', key=request.args.get('key')) if request.args.get('key') else url_for('index') }}"
+           class="btn-accent">
+            <i class="fas fa-arrow-left mr-2"></i>Back to Library
+        </a>
+    </header>
+
+    <form method="POST" id="theme-form">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for slug, theme in themes.items() %}
+            <label class="theme-card block bg-card border-2 rounded-xl p-4 cursor-pointer
+                         {% if slug == current_theme %}border-accent active{% else %}border-color{% endif %}
+                         hover:border-accent"
+                   for="theme-{{ slug }}"
+                   data-theme="{{ slug }}">
+                <input type="radio"
+                       name="theme"
+                       id="theme-{{ slug }}"
+                       value="{{ slug }}"
+                       {% if slug == current_theme %}checked{% endif %}
+                       onchange="this.closest('form').submit()">
+                <div class="theme-preview mb-3">
+                    {% for color in theme.colors[:8] %}
+                    <span style="background-color: {{ color }};"></span>
+                    {% endfor %}
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="font-semibold text-primary text-sm">{{ theme.name }}</span>
+                    <span class="mode-badge mode-badge-{{ theme.mode }}">{{ theme.mode }}</span>
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+    </form>
+
+    <p class="text-center text-muted mt-8 text-sm">
+        Theme config saved to <code>~/.config/neostore/localfs/config.toml</code>
+    </p>
+</div>
+
+<script>
+document.querySelectorAll('.theme-card').forEach(function(card) {
+    card.addEventListener('mouseenter', function() {
+        var input = this.querySelector('input[type="radio"]');
+        if (!input.checked) {
+            this.style.borderColor = 'var(--accent)';
+        }
+    });
+    card.addEventListener('mouseleave', function() {
+        var input = this.querySelector('input[type="radio"]');
+        if (!input.checked) {
+            this.style.borderColor = '';
+        }
+    });
+});
+</script>
+{% endblock %}

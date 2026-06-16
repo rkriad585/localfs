@@ -43,6 +43,15 @@ def thumb_dir(test_root):
 
 
 @pytest.fixture(autouse=True)
+def reset_theme(monkeypatch, tmp_path):
+    import theme
+    theme.CURRENT_THEME = "dark"
+    theme.CURRENT_MODE = "dark"
+    monkeypatch.setattr(theme, "CONFIG_DIR", str(tmp_path / ".config" / "neostore" / "localfs"))
+    monkeypatch.setattr(theme, "CONFIG_FILE", str(tmp_path / ".config" / "neostore" / "localfs" / "config.toml"))
+
+
+@pytest.fixture(autouse=True)
 def reset_share_enabled():
     main._share_enabled = False
     yield

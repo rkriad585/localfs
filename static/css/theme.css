@@ -1,0 +1,153 @@
+/* ─── CSS Custom Properties for All Themes ─── */
+
+.website-theme {
+    --bg-primary: #0f172a;
+    --bg-secondary: #111827;
+    --bg-card: #1e293b;
+    --border: #334155;
+    --text-muted: #64748b;
+    --text-primary: #e2e8f0;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --input-bg: #1e293b;
+    --shadow: rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Utility Classes ─── */
+
+.bg-primary { background-color: var(--bg-primary); }
+.bg-secondary { background-color: var(--bg-secondary); }
+.bg-card { background-color: var(--bg-card); }
+.bg-input { background-color: var(--input-bg); }
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary, var(--text-primary)); }
+.text-muted { color: var(--text-muted); }
+.border-color { border-color: var(--border); }
+.accent { background-color: var(--accent); }
+.accent-hover:hover { background-color: var(--accent-hover); }
+.accent-hover-bg { background-color: var(--accent-hover); }
+.text-accent { color: var(--accent); }
+.text-accent:hover { color: var(--accent-hover); }
+.shadow-card { box-shadow: 0 4px 6px -1px var(--shadow, rgba(0,0,0,0.1)), 0 2px 4px -2px var(--shadow, rgba(0,0,0,0.1)); }
+.ring-accent:focus { --tw-ring-color: var(--accent); }
+
+/* ─── Card hover ─── */
+.file-card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+.file-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px var(--shadow, rgba(0,0,0,0.1)), 0 4px 6px -4px var(--shadow, rgba(0,0,0,0.1));
+}
+
+/* ─── Theme swatches on settings page ─── */
+.theme-swatch {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 9999px;
+    display: inline-block;
+    border: 2px solid transparent;
+}
+.theme-swatch-ring {
+    border-color: var(--accent);
+}
+
+/* ─── Settings theme cards ─── */
+.theme-card {
+    border: 2px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    background-color: var(--bg-card);
+}
+.theme-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent);
+    transform: translateY(-3px);
+}
+.theme-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent);
+}
+.theme-card input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+/* ─── Play / Download buttons ─── */
+.btn-play {
+    background-color: #22c55e;
+    color: white;
+    font-weight: 700;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+.btn-play:hover {
+    background-color: #16a34a;
+}
+.btn-download {
+    background-color: var(--accent);
+    color: white;
+    font-weight: 700;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+.btn-download:hover {
+    background-color: var(--accent-hover);
+}
+.btn-accent {
+    background-color: var(--accent);
+    color: white;
+    font-weight: 700;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+.btn-accent:hover {
+    background-color: var(--accent-hover);
+}
+
+/* ─── Mode badge ─── */
+.mode-badge {
+    display: inline-block;
+    padding: 0.125rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.mode-badge-dark {
+    background-color: #1e293b;
+    color: #cbd5e1;
+}
+.mode-badge-light {
+    background-color: #e2e8f0;
+    color: #334155;
+}
+
+/* ─── Scrollbar for dark themes ─── */
+.website-theme ::-webkit-scrollbar {
+    width: 8px;
+}
+.website-theme ::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+.website-theme ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
