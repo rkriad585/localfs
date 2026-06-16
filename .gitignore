@@ -16,3 +16,6 @@ static/thumbnails/
 
 # Test temporary directory
 .pytest_tmp/
+
+# Separate companion project (not part of localfs)
+webplay/
