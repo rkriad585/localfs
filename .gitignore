@@ -7,15 +7,10 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
 
-# localfs runtime data (now stored in ~/.config/neostore/localfs/)
+# localfs runtime data (stored in ~/.config/neostore/localfs/)
 data/
-media/
-static/thumbnails/
 
-# Test temporary directory
+# localfs runtime data (stored in ~/.config/neostore/localfs/)
 .pytest_tmp/
-
-# Separate companion project (not part of localfs)
-webplay/

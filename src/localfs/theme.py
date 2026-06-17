@@ -1,6 +1,6 @@
 import os
 import tomllib
-import config
+from . import config
 from collections import OrderedDict
 
 CONFIG_DIR = config.BASE_DIR

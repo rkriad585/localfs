@@ -6,7 +6,7 @@ localfs is a Python Flask web application that shares files from a local directo
 
 ## Components
 
-### Application Entry Point (`main.py`)
+### Application Entry Point (`src/localfs/main.py`)
 
 - Flask app initialization
 - Route handlers for all endpoints
@@ -14,23 +14,31 @@ localfs is a Python Flask web application that shares files from a local directo
 - Click CLI entry point
 - Module-level dependency checks
 
-### Configuration (`config.py`)
+### Configuration (`src/localfs/config.py`)
 
 Singleton configuration module imported by `main.py`. Contains all user-configurable constants.
+
+### Theme System (`src/localfs/theme.py`)
+
+16 theme definitions with CSS variables. Load/save theme selection to `~/.config/neostore/localfs/config.toml`.
 
 ### Templates (Jinja2)
 
 Server-side rendered HTML with Tailwind CSS. No frontend framework.
 
 | Template | Route | Purpose |
-|---|---|---|
+|---|---|---|---|
+| `base.html` | — | Base layout with theme CSS injection |
 | `index.html` | `/` | File grid with search, play/download buttons |
 | `player.html` | `/player/<filename>` | Video/audio player |
+| `settings.html` | `/settings` | Theme picker with color swatches |
+| `login.html` | `/login` | Username/password login form |
 | `error.html` | all errors | 401/403/404/500 pages |
 
 ### Static Files
 
-- `main.js` — jQuery-based search filtering (client-side)
+- `css/theme.css` — CSS custom properties for 16 themes
+- `js/main.js` — jQuery-based search filtering (client-side)
 - `logo.svg` — Project logo
 
 ## Request Flow
@@ -48,11 +56,19 @@ Browser → Flask → before_request (access key check) → route handler → te
 ### Route Handlers
 
 | Route | Method | Purpose |
-|---|---|---|
-| `/` | GET | List files from `MEDIA_FOLDER` |
+|---|---|---|---|
+| `/` | GET | List files from media directories |
 | `/player/<filename>` | GET | Render player page for media files |
 | `/media/<filename>` | GET | Stream file content (no access key check) |
+| `/settings` | GET/POST | Theme picker page |
+| `/upload` | POST | Upload files with auto-rename |
+| `/delete` | POST | Delete files |
+| `/rename` | POST | Rename files |
+| `/login` | GET/POST | User authentication |
+| `/logout` | GET | Clear session |
 | `/api` | GET | Return JSON log data (requires `--share` flag) |
+| `/favicon.ico` | GET | Serve SVG favicon |
+| `/thumbnails/<path>` | GET | Serve generated thumbnails |
 
 ## Data Flow
 
@@ -66,7 +82,7 @@ Browser → Flask → before_request (access key check) → route handler → te
 
 ### Logging
 
-`log_activity()` reads existing JSON from `data/localfs-data.json`, appends an entry, and writes back.
+`log_activity()` reads existing JSON from `~/.config/neostore/localfs/localfs-data.json`, appends an entry, and writes back.
 
 ## Security Model
 

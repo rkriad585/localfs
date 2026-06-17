@@ -2,7 +2,7 @@ import os
 import json
 from collections import OrderedDict
 
-import theme
+import localfs.theme as theme
 
 
 class TestThemeData:

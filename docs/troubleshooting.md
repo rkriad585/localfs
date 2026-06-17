@@ -6,7 +6,7 @@
 OSError: [Errno 98] Address already in use
 ```
 
-**Solution:** Change the port in `config.py` or kill the process using port 5000:
+**Solution:** Change the port with `--port` flag or edit `src/localfs/config.py`:
 
 ```bash
 lsof -i :5000   # Find the PID
@@ -51,7 +51,7 @@ The web access key is required. Make sure your URL includes the `key` parameter:
 http://127.0.0.1:5000/?key=YOUR_KEY_HERE
 ```
 
-To disable the key requirement, set in `config.py`:
+To disable the key requirement, use `--no-auth` flag or set in `src/localfs/config.py`:
 
 ```python
 WEBSITE_ACCESS_KEY_REQUIRED = False
@@ -59,8 +59,8 @@ WEBSITE_ACCESS_KEY_REQUIRED = False
 
 ## Files Not Showing
 
-1. Make sure files are in the `media/` directory.
-2. Check `ALLOWED_EXTENSIONS` in `config.py` — only matching extensions are displayed.
+1. Make sure files are in the media directory (default: `~/Downloads`).
+2. Check `ALLOWED_EXTENSIONS` in `src/localfs/config.py` — only matching extensions are displayed.
 3. Set `ALLOWED_EXTENSIONS = ""` to show all files.
 4. The application hides directories; only files are shown.
 

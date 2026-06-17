@@ -10,7 +10,7 @@ GET /api?key=YOUR_API_KEY
 
 ## Authentication
 
-The API key is the same as the website access key, set in `config.py`:
+The API key is the same as the website access key, set in `src/localfs/config.py`:
 
 ```python
 API_KEY = secrets.token_hex(16)

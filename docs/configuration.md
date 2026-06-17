@@ -1,6 +1,6 @@
 # Configuration
 
-All configuration is in `config.py` at the project root.
+All configuration is in `src/localfs/config.py`.
 
 ## General Settings
 
@@ -14,10 +14,10 @@ All configuration is in `config.py` at the project root.
 
 | Setting | Default | Description |
 |---|---|---|
-| `MEDIA_FOLDER` | `"media"` | Directory containing files to share. |
-| `DATA_FOLDER` | `"data"` | Directory for logs and runtime data. |
+| `MEDIA_FOLDER` | `"~/Downloads"` | Directory containing files to share. |
+| `DATA_FOLDER` | `"~/.config/neostore/localfs"` | Directory for logs and runtime data. |
 | `DATA_FILE` | `"localfs-data.json"` | Log filename inside `DATA_FOLDER`. |
-| `THUMBNAIL_FOLDER` | `"static/thumbnails"` | Directory for auto-generated video thumbnails. |
+| `THUMBNAIL_FOLDER` | `"~/.config/neostore/localfs/thumbnails"` | Directory for auto-generated video thumbnails. |
 
 ## File Sharing
 
@@ -47,4 +47,4 @@ API_KEY = "my-secret-key-123"
 
 ## Environment Variables
 
-When running via Docker, you can override any config by binding your own `config.py` as a volume, or by setting environment variables in the docker-compose file.
+When running via Docker, you can override config by setting environment variables in the docker-compose file.

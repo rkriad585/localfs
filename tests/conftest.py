@@ -6,8 +6,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-import config
-import main
+_src = Path(__file__).parent.parent / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
+import localfs.config as config
+import localfs.main as main
 
 
 @pytest.fixture(scope="session")
@@ -44,7 +48,7 @@ def thumb_dir(test_root):
 
 @pytest.fixture(autouse=True)
 def reset_theme(monkeypatch, tmp_path):
-    import theme
+    import localfs.theme as theme
     theme.CURRENT_THEME = "dark"
     theme.CURRENT_MODE = "dark"
     monkeypatch.setattr(theme, "CONFIG_DIR", str(tmp_path / ".config" / "neostore" / "localfs"))

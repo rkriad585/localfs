@@ -45,7 +45,7 @@ function Clean {
 }
 
 function Run {
-    Invoke-Cmd python main.py $args
+    Invoke-Cmd python -m localfs $args
 }
 
 function Docker-Build {

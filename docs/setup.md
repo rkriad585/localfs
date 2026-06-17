@@ -15,7 +15,7 @@
 git clone https://github.com/rkriad585/localfs.git
 cd localfs
 pip install -e .
-python main.py
+python -m localfs
 ```
 
 The first run will check for missing dependencies and offer to install them.
@@ -24,7 +24,7 @@ The first run will check for missing dependencies and offer to install them.
 
 ```bash
 docker build -t localfs .
-docker run -p 5000:5000 -v ./media:/app/media -v ./data:/app/data localfs
+docker run -p 5000:5000 localfs
 ```
 
 ### Option 3: Installer script
@@ -32,21 +32,21 @@ docker run -p 5000:5000 -v ./media:/app/media -v ./data:/app/data localfs
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rkriad585/localfs/main/installer.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rkriad585/localfs/main/scripts/installer.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/rkriad585/localfs/main/installer.ps1 | iex
+irm https://raw.githubusercontent.com/rkriad585/localfs/main/scripts/installer.ps1 | iex
 ```
 
 ## First Run
 
-1. Place files to share in the `media/` directory.
+1. Place files to share in `~/Downloads` (or configure `MEDIA_FOLDER` in config).
 2. Start the server:
    ```bash
-   python main.py
+   python -m localfs
    ```
 3. Open the printed **Access URL** in your browser.
 4. Enter the access key if prompted.

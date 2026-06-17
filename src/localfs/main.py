@@ -9,7 +9,7 @@ import shutil
 import mimetypes
 from datetime import datetime
 
-import config
+from . import config
 
 def check_and_install_dependencies():
     def print_fallback(msg):
@@ -78,10 +78,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from rich.console import Console
 import click
 
-import theme as theme_mod
+from . import theme as theme_mod
 
 console = Console()
-app = Flask(__name__, template_folder='templates', static_folder='static')
+_pkg_dir = os.path.dirname(__file__)
+app = Flask(__name__,
+    template_folder=os.path.join(_pkg_dir, 'templates'),
+    static_folder=os.path.join(_pkg_dir, 'static'))
 app.secret_key = config.SECRET_KEY
 
 _share_enabled = False

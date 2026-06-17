@@ -7,9 +7,9 @@ from io import BytesIO, StringIO
 
 import click
 import pytest
+import localfs.config as config
 
-import config
-import main
+import localfs.main as main
 
 
 # =============================================================================
@@ -1231,7 +1231,7 @@ class TestMainCli:
         assert config.WEBSITE_ACCESS_KEY_REQUIRED is False
 
     def test_theme_flag(self, test_config, media_dir, data_dir, thumb_dir):
-        import theme
+        import localfs.theme as theme
         original = theme.CURRENT_THEME
         with patch.object(main, "setup_directories"):
             with patch.object(main.console, "print"):
@@ -1241,7 +1241,7 @@ class TestMainCli:
         assert theme.CURRENT_THEME == "light"
 
     def test_mode_flag(self, test_config, media_dir, data_dir, thumb_dir):
-        import theme
+        import localfs.theme as theme
         theme.CURRENT_MODE = "light"
         with patch.object(main, "setup_directories"):
             with patch.object(main.console, "print"):

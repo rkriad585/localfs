@@ -1,4 +1,4 @@
-import config
+import localfs.config as config
 import secrets
 import os
 

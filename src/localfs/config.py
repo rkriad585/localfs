@@ -5,15 +5,15 @@ import secrets, os
 BASE_DIR = os.path.join(os.path.expanduser("~"), ".config", "neostore", "localfs")
 
 # --- Version ---
-_VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".version")
 try:
-    with open(_VERSION_FILE) as _f:
-        VERSION = _f.read().strip()
-except (FileNotFoundError, IOError):
+    from importlib.metadata import version as _meta_version
+    VERSION = _meta_version("localfs")
+except Exception:
+    _VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".version")
     try:
-        from importlib.metadata import version as _meta_version
-        VERSION = _meta_version("localfs")
-    except (ImportError, Exception):
+        with open(_VERSION_FILE) as _f:
+            VERSION = _f.read().strip()
+    except Exception:
         VERSION = "0.0.0"
 
 # --- General Settings ---

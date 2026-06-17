@@ -4,7 +4,7 @@
 
 Before deploying to production:
 
-1. Set `DEBUG = False` in `config.py`
+1. Set `DEBUG = False` in `src/localfs/config.py`
 2. Use a reverse proxy (nginx, Caddy, Traefik)
 3. Enable HTTPS with Let's Encrypt
 4. Run with a non-root user
@@ -14,7 +14,7 @@ Before deploying to production:
 
 ```bash
 pip install -e .
-python main.py
+python -m localfs
 ```
 
 **Not recommended for production.** Use a process manager instead.
@@ -32,7 +32,7 @@ After=network.target
 Type=simple
 User=localfs
 WorkingDirectory=/opt/localfs
-ExecStart=/usr/bin/python3 /opt/localfs/main.py
+ExecStart=/usr/bin/python3 -m localfs
 Restart=always
 
 [Install]
@@ -73,9 +73,6 @@ docker build -t localfs .
 docker run -d \
     --name localfs \
     -p 5000:5000 \
-    -v ./media:/app/media \
-    -v ./data:/app/data \
-    -v ./config.py:/app/config.py \
     --restart unless-stopped \
     localfs
 ```
@@ -88,10 +85,6 @@ services:
     build: .
     ports:
       - "5000:5000"
-    volumes:
-      - ./media:/app/media
-      - ./data:/app/data
-      - ./config.py:/app/config.py
     restart: unless-stopped
 ```
 
@@ -110,4 +103,4 @@ docker compose up -d
 
 ### With Railway / Render / Fly.io
 
-These platforms support Docker deployments. Use the provided `Dockerfile` and set the start command to `python main.py`.
+These platforms support Docker deployments. Use the provided `Dockerfile`.

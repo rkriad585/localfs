@@ -40,37 +40,51 @@ ruff format .
 
 ```
 localfs/
-├── main.py              # Flask app, routes, helpers, CLI entry point
-├── config.py            # Configuration constants
-├── pyproject.toml       # Project metadata and scripts
-│
-├── templates/           # Jinja2 HTML templates
-│   ├── index.html       # File grid
-│   ├── player.html      # Media player
-│   └── error.html       # Error pages
-│
-├── static/
-│   ├── js/main.js       # Client-side search
-│   └── logo.svg         # Project logo
+├── src/
+│   └── localfs/          # Python package
+│       ├── __init__.py
+│       ├── __main__.py    # `python -m localfs` entry point
+│       ├── main.py        # Flask app, routes, helpers, CLI
+│       ├── config.py      # Configuration constants
+│       ├── theme.py       # Theme definitions and persistence
+│       ├── templates/     # Jinja2 HTML templates
+│       │   ├── base.html
+│       │   ├── index.html
+│       │   ├── player.html
+│       │   ├── settings.html
+│       │   ├── login.html
+│       │   └── error.html
+│       └── static/
+│           ├── css/theme.css
+│           ├── js/main.js
+│           └── logo.svg
 │
 ├── tests/
-│   ├── conftest.py      # Fixtures (test client, temp dirs)
-│   ├── test_config.py   # Config tests
-│   └── test_main.py     # Main app tests
+│   ├── __init__.py
+│   ├── conftest.py       # Fixtures (test client, temp dirs)
+│   ├── test_config.py
+│   ├── test_main.py
+│   └── test_theme.py
 │
-└── docs/                # Documentation
+├── scripts/              # Installer scripts
+│   ├── installer.sh
+│   └── installer.ps1
+│
+├── docs/                 # Documentation
+├── pyproject.toml        # Project metadata
+└── .version              # Version file
 ```
 
 ## Adding a New Route
 
-1. Define the route function in `main.py`.
-2. Create/update the Jinja2 template in `templates/`.
+1. Define the route function in `src/localfs/main.py`.
+2. Create/update the Jinja2 template in `src/localfs/templates/`.
 3. Add tests in `tests/test_main.py`.
 
 ## Adding a Configuration Option
 
-1. Add the variable to `config.py`.
-2. Reference it in `main.py` via `import config`.
+1. Add the variable to `src/localfs/config.py`.
+2. Reference it in `src/localfs/main.py` via `from . import config`.
 3. Update `docs/configuration.md`.
 4. Add a test in `tests/test_config.py`.
 

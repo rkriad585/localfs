@@ -4,14 +4,14 @@
 
 **Standard mode (no API):**
 ```bash
-python main.py
+python -m localfs
 ```
 
 **With API enabled:**
 ```bash
-python main.py --share
+python -m localfs --share
 # or
-python main.py -s
+python -m localfs -s
 ```
 
 ## Accessing the Web Interface

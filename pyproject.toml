@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "localfs"
 version = "0.2.0"
@@ -11,4 +15,10 @@ dependencies = [
 ]
 
 [project.scripts]
-localfs = "main:main"
+localfs = "localfs.main:main"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]

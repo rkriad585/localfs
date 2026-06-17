@@ -6,10 +6,6 @@ dist/
 *.egg-info
 .venv
 
-# localfs runtime
-data/
-static/thumbnails/
-
 # Test / CI
 .pytest_cache/
 .pytest_tmp/

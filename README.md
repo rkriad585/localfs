@@ -26,19 +26,19 @@ A simple, fast, and beautiful local file sharing service built with Python and F
 git clone https://github.com/rkriad585/localfs.git
 cd localfs
 pip install -e .
-python main.py
+python -m localfs
 ```
 
 ### Install via script (Linux / macOS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rkriad585/localfs/main/installer.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rkriad585/localfs/main/scripts/installer.sh | sh
 ```
 
 ### Install via script (Windows PowerShell)
 
-```powershell
-irm https://raw.githubusercontent.com/rkriad585/localfs/main/installer.ps1 | iex
+```bash
+irm https://raw.githubusercontent.com/rkriad585/localfs/main/scripts/installer.ps1 | iex
 ```
 
 Open the URL printed in the terminal to access the web interface.

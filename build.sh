@@ -43,7 +43,7 @@ clean() {
 }
 
 run() {
-    cmd "$PYTHON" main.py "$@"
+    cmd "$PYTHON" -m localfs "$@"
 }
 
 docker_build() {

@@ -8,7 +8,7 @@ build:
 	$(PYTHON) -m build --wheel --sdist .
 
 run:
-	$(PYTHON) main.py
+	$(PYTHON) -m localfs
 
 clean:
 	rm -rf build/ dist/ *.egg-info __pycache__ .pytest_cache .ruff_cache
