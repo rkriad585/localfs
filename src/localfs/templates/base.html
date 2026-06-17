@@ -26,8 +26,17 @@
     </style>
     {% block head %}{% endblock %}
 </head>
-<body class="website-theme bg-primary text-primary font-sans min-h-screen">
-    {% block content %}{% endblock %}
+<body class="website-theme bg-primary text-primary font-sans min-h-screen flex flex-col">
+    <header class="bg-secondary border-b border-color px-4 py-2 flex items-center gap-3 shrink-0">
+        <a href="{{ url_for('index', key=request.args.get('key')) if request.args.get('key') else url_for('index') }}"
+           class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <img src="{{ url_for('static', filename='logo.svg') }}" alt="" class="h-7 w-7">
+            <span class="font-bold text-primary text-sm tracking-wider">localfs</span>
+        </a>
+    </header>
+    <main class="flex-grow flex flex-col">
+        {% block content %}{% endblock %}
+    </main>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>

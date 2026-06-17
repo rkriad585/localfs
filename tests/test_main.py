@@ -1245,8 +1245,16 @@ class TestMainCli:
         with patch.object(main, "setup_directories"):
             with patch.object(main.console, "print"):
                 with patch.object(main.app, "run"):
-                    main.main.callback(share=True, selfuninstall=False, **self._KW)
+                    main.main.callback(share='key', selfuninstall=False, **self._KW)
         assert main._share_enabled is True
+
+    def test_share_free_flag(self, test_config, media_dir, data_dir, thumb_dir):
+        with patch.object(main, "setup_directories"):
+            with patch.object(main.console, "print"):
+                with patch.object(main.app, "run"):
+                    main.main.callback(share='free', selfuninstall=False, **self._KW)
+        assert main._share_enabled is True
+        assert main.config.WEBSITE_ACCESS_KEY_REQUIRED is False
 
     def test_selfuninstall_flag(self, test_config, data_dir):
         with patch.object(main.subprocess, "check_call") as mock_pip:

@@ -453,7 +453,6 @@ def index():
             abort(404)
 
     try:
-        allowed_exts = [e.strip() for e in config.ALLOWED_EXTENSIONS.lower().split(" ") if e]
         for entry in sorted(os.listdir(base)):
             filepath = os.path.join(base, entry)
             rel_path = f"{relative_dir}/{entry}" if relative_dir else entry
@@ -464,9 +463,6 @@ def index():
                 if search_q and search_q not in entry.lower():
                     continue
                 dirs.append({"name": entry, "path": rel_path})
-                continue
-
-            if allowed_exts and not any(entry.lower().endswith(e) for e in allowed_exts):
                 continue
 
             file_type = get_file_type(entry)
@@ -758,7 +754,8 @@ def _self_uninstall():
 
 @click.command()
 @click.version_option(version=config.VERSION, prog_name="localfs")
-@click.option('-s', '--share', is_flag=True, help='Enable the API endpoint to share logged data.')
+@click.option('-s', '--share', is_flag=False, flag_value='key', default=None,
+              help='Enable API sharing. Use "--share free" to run without any key/auth.')
 @click.option('--selfuninstall', is_flag=True, help='Uninstall localfs and clean up configuration.')
 @click.option('--port', type=int, default=None, help='Server port (default: 5000).')
 @click.option('--host', default=None, help='Server bind address (default: 0.0.0.0).')
@@ -776,7 +773,13 @@ def main(share, selfuninstall, port, host, key, media, no_auth, theme, mode, add
         return
 
     global _share_enabled
-    _share_enabled = share
+    if share == 'free':
+        _share_enabled = True
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+    elif share == 'key':
+        _share_enabled = True
+    else:
+        _share_enabled = False
 
     if port is not None:
         config.PORT = port
@@ -822,18 +825,32 @@ def main(share, selfuninstall, port, host, key, media, no_auth, theme, mode, add
     console.print("[bold green]Starting localfs server...[/bold green]")
     console.print(f" * Media Folder: [cyan]{os.path.abspath(config.MEDIA_FOLDER)}[/cyan]")
 
-    access_url = f"http://{config.HOST}:{config.PORT}"
-    if config.WEBSITE_ACCESS_KEY_REQUIRED:
-        console.print(f" * Website Access Key: [bold magenta]{config.API_KEY}[/bold magenta]")
-        access_url_with_key = f"{access_url}/?key={config.API_KEY}"
-        console.print(f" * Access URL: [link={access_url_with_key}]{access_url_with_key}[/link]")
-    else:
-        console.print(f" * Access URL: [link={access_url}]{access_url}[/link]")
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        local_ip = "127.0.0.1"
 
-    if share:
-        console.print(f" * API Key: [bold magenta]{config.API_KEY}[/bold magenta]")
+    access_url_local = f"http://127.0.0.1:{config.PORT}"
+    access_url_net = f"http://{local_ip}:{config.PORT}"
+
+    if share == 'free':
+        console.print(f" * Mode: [bold green]Free[/bold green] — no key required, open access")
+        console.print(f" * Local:    [link={access_url_local}]{access_url_local}[/link]")
+        console.print(f" * Network:  [link={access_url_net}]{access_url_net}[/link]")
+    elif config.WEBSITE_ACCESS_KEY_REQUIRED:
+        console.print(f" * Website Access Key: [bold magenta]{config.API_KEY}[/bold magenta]")
+        console.print(f" * Local:    [link={access_url_local}/?key={config.API_KEY}]{access_url_local}/?key={config.API_KEY}[/link]")
+        console.print(f" * Network:  [link={access_url_net}/?key={config.API_KEY}]{access_url_net}/?key={config.API_KEY}[/link]")
     else:
-        console.print(f" * API Enabled: [bold red]No[/bold red]")
+        console.print(f" * Local:    [link={access_url_local}]{access_url_local}[/link]")
+        console.print(f" * Network:  [link={access_url_net}]{access_url_net}[/link]")
+
+    if share == 'key':
+        console.print(f" * API Sharing: [bold green]Enabled[/bold green] (endpoint: /api)")
 
     console.print("[yellow]Press CTRL+C to stop the server.[/yellow]")
 
