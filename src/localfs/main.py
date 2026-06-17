@@ -46,6 +46,41 @@ def check_and_install_dependencies():
             out("Cannot proceed without dependencies.")
             sys.exit(1)
 
+def _detect_platform():
+    import platform as _platform
+    system = _platform.system().lower()
+
+    if system == "linux":
+        if shutil.which("apt-get"):
+            sudo = ["sudo"] if shutil.which("sudo") else []
+            return "linux", "apt-get", sudo + ["apt-get", "install", "-y"], "ffmpeg"
+        if shutil.which("dnf"):
+            sudo = ["sudo"] if shutil.which("sudo") else []
+            return "linux", "dnf", sudo + ["dnf", "install", "-y"], "ffmpeg"
+        if shutil.which("yum"):
+            sudo = ["sudo"] if shutil.which("sudo") else []
+            return "linux", "yum", sudo + ["yum", "install", "-y"], "ffmpeg"
+        if shutil.which("pacman"):
+            sudo = ["sudo"] if shutil.which("sudo") else []
+            return "linux", "pacman", sudo + ["pacman", "-S", "--noconfirm"], "ffmpeg"
+        if shutil.which("zypper"):
+            sudo = ["sudo"] if shutil.which("sudo") else []
+            return "linux", "zypper", sudo + ["zypper", "install", "-y"], "ffmpeg"
+        if shutil.which("apk"):
+            sudo = ["sudo"] if shutil.which("sudo") else []
+            return "linux", "apk", sudo + ["apk", "add"], "ffmpeg"
+    elif system == "darwin":
+        if shutil.which("brew"):
+            return "macos", "brew", ["brew", "install"], "ffmpeg"
+    elif system == "windows":
+        if shutil.which("winget"):
+            return "windows", "winget", ["winget", "install", "--exact"], "FFmpeg"
+        if shutil.which("choco"):
+            return "windows", "choco", ["choco", "install", "-y"], "ffmpeg"
+
+    return system, None, None, "ffmpeg"
+
+
 def check_ffmpeg():
     def print_fallback(msg):
         print(msg)
@@ -59,16 +94,39 @@ def check_ffmpeg():
 
     out = console.print if console else print_fallback
 
-    if not shutil.which("ffmpeg"):
-        out("Error: `ffmpeg` is not installed or not in your system's PATH.")
-        out("`ffmpeg` is required to generate video thumbnails.")
-        out("")
-        out("How to install:")
-        out("  - Windows: Download from https://ffmpeg.org/download.html and add to your PATH.")
-        out("  - macOS (using Homebrew): `brew install ffmpeg`")
-        out("  - Linux (Debian/Ubuntu): `sudo apt update && sudo apt install ffmpeg`")
-        out("  - Linux (Fedora/CentOS): `sudo dnf install ffmpeg`")
+    if shutil.which("ffmpeg"):
+        return
+
+    out("Warning: ffmpeg is not installed — video thumbnails will not be generated.")
+    os_name, pkg_manager, install_cmd, pkg_name = _detect_platform()
+
+    if pkg_manager is None:
+        out(f"Auto-install not supported on {os_name}.")
+        out("Install ffmpeg manually:")
+        out("  - Windows: Download from https://ffmpeg.org/download.html and add to PATH.")
+        out("  - macOS: `brew install ffmpeg`")
+        out("  - Linux: `sudo apt-get install ffmpeg` or equivalent")
         sys.exit(1)
+
+    try:
+        answer = input(f"Install ffmpeg via {pkg_manager}? (Y/n): ").lower().strip()
+    except (EOFError, KeyboardInterrupt):
+        answer = 'n'
+
+    if answer in ['y', 'yes', '']:
+        out(f"Installing ffmpeg via {pkg_manager}...")
+        try:
+            subprocess.check_call(install_cmd + [pkg_name])
+            if shutil.which("ffmpeg"):
+                out("ffmpeg installed successfully!")
+                return
+            out("Installation completed but ffmpeg not found in PATH.")
+        except subprocess.CalledProcessError as e:
+            out(f"Failed to install ffmpeg: {e}")
+        except FileNotFoundError:
+            out(f"Could not run '{install_cmd[0]}'. Install ffmpeg manually.")
+
+    out("Continuing without ffmpeg — thumbnails will not be generated.")
 
 check_and_install_dependencies()
 check_ffmpeg()

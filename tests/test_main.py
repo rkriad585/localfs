@@ -1143,17 +1143,87 @@ class TestCheckFfmpeg:
         with patch("shutil.which", return_value="/usr/bin/ffmpeg"):
             main.check_ffmpeg()
 
-    def test_exits_when_ffmpeg_missing(self):
-        with patch("shutil.which", return_value=None):
-            with pytest.raises(SystemExit) as exc:
-                main.check_ffmpeg()
-            assert exc.value.code == 1
+    def test_exits_on_unsupported_platform(self):
+        which_map = {}
+        def fake_which(cmd):
+            return which_map.get(cmd)
+        with patch("shutil.which", side_effect=fake_which):
+            with patch("localfs.main.input", return_value="n"):
+                with pytest.raises(SystemExit) as exc:
+                    main.check_ffmpeg()
+        assert exc.value.code == 1
 
     def test_fallback_when_rich_missing(self):
-        with patch("shutil.which", return_value=None):
+        which_map = {}
+        def fake_which(cmd):
+            return which_map.get(cmd)
+        with patch("shutil.which", side_effect=fake_which):
             with patch.dict("sys.modules", {"rich.console": None}):
-                with pytest.raises(SystemExit):
+                with patch("localfs.main.input", return_value="n"):
+                    with pytest.raises(SystemExit):
+                        main.check_ffmpeg()
+
+    def test_auto_install_declined(self):
+        def fake_which(cmd):
+            return "/usr/bin/apt-get" if cmd in ("apt-get", "sudo") else None
+        with patch("shutil.which", side_effect=fake_which):
+            with patch("localfs.main.input", return_value="n"):
+                main.check_ffmpeg()
+
+    def test_auto_install_success(self):
+        call_n = [0]
+        def fake_which(cmd):
+            call_n[0] += 1
+            if cmd in ("apt-get", "sudo"):
+                return "/usr/bin/" + cmd
+            if cmd == "ffmpeg":
+                return "/usr/bin/ffmpeg" if call_n[0] > 3 else None
+            return None
+        with patch("shutil.which", side_effect=fake_which):
+            with patch("localfs.main.input", return_value=""):
+                with patch("localfs.main.subprocess.check_call") as mock_install:
                     main.check_ffmpeg()
+        mock_install.assert_called_once_with(
+            ["sudo", "apt-get", "install", "-y", "ffmpeg"]
+        )
+
+    def test_auto_install_failure(self):
+        def fake_which(cmd):
+            return "/usr/bin/apt-get" if cmd in ("apt-get", "sudo") else None
+        with patch("shutil.which", side_effect=fake_which):
+            with patch("localfs.main.input", return_value="y"):
+                with patch("localfs.main.subprocess.check_call",
+                           side_effect=subprocess.CalledProcessError(1, "apt-get")):
+                    main.check_ffmpeg()
+
+    def test_auto_install_macos_brew(self):
+        def fake_which(cmd):
+            return "/opt/homebrew/bin/brew" if cmd == "brew" else None
+        with patch("platform.system", return_value="Darwin"):
+            with patch("shutil.which", side_effect=fake_which):
+                with patch("localfs.main.input", return_value=""):
+                    with patch("localfs.main.subprocess.check_call") as mock_install:
+                        main.check_ffmpeg()
+        mock_install.assert_called_once_with(
+            ["brew", "install", "ffmpeg"]
+        )
+
+    def test_auto_install_windows_winget(self):
+        def fake_which(cmd):
+            return "C:\\Windows\\winget.exe" if cmd == "winget" else None
+        with patch("platform.system", return_value="Windows"):
+            with patch("shutil.which", side_effect=fake_which):
+                with patch("localfs.main.input", return_value="y"):
+                    with patch("localfs.main.subprocess.check_call") as mock_install:
+                        main.check_ffmpeg()
+        mock_install.assert_called_once_with(
+            ["winget", "install", "--exact", "FFmpeg"]
+        )
+
+    def test_detect_platform_returns_correctly(self):
+        os_name, pkg, cmd, pkg_name = main._detect_platform()
+        assert isinstance(os_name, str)
+        assert isinstance(pkg_name, str)
 
 
 # =============================================================================
