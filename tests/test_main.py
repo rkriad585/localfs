@@ -96,6 +96,49 @@ class TestGetMimeType:
         assert main.get_mime_type("video.mp4") == "video/mp4"
 
 
+class TestIsPreviewable:
+    def test_txt_is_previewable(self):
+        assert main.is_previewable("readme.txt") is True
+
+    def test_py_is_previewable(self):
+        assert main.is_previewable("script.py") is True
+
+    def test_pdf_is_previewable(self):
+        assert main.is_previewable("doc.pdf") is True
+
+    def test_md_is_previewable(self):
+        assert main.is_previewable("readme.md") is True
+
+    @pytest.mark.parametrize("filename", ["video.mp4", "audio.mp3", "image.jpg", "noext", "archive.zip"])
+    def test_non_previewable_extensions(self, filename):
+        assert main.is_previewable(filename) is False
+
+
+class TestGetPreviewType:
+    @pytest.mark.parametrize("filename,expected", [
+        ("script.py", "code"), ("file.js", "code"), ("style.css", "code"),
+        ("readme.md", "markdown"), ("doc.rst", "markdown"),
+        ("doc.pdf", "pdf"), ("notes.txt", "text"), ("server.log", "text"),
+    ])
+    def test_preview_types(self, filename, expected):
+        assert main.get_preview_type(filename) == expected
+
+    def test_unknown_extension_falls_back(self):
+        assert main.get_preview_type("notes.txt") == "text"
+
+
+class TestGetLanguageClass:
+    @pytest.mark.parametrize("filename,expected", [
+        ("script.py", "python"), ("app.js", "javascript"), ("style.css", "css"),
+        ("data.json", "json"), ("doc.md", "markdown"),
+    ])
+    def test_known_languages(self, filename, expected):
+        assert main.get_language_class(filename) == expected
+
+    def test_unknown_extension_returns_empty(self):
+        assert main.get_language_class("notes.txt") == ""
+
+
 class TestIsMediaPlayable:
     @pytest.mark.parametrize("file_type", ["video", "audio"])
     def test_playable_types(self, file_type):
@@ -233,6 +276,12 @@ class TestLogActivity:
 
 
 class TestGenerateThumbnail:
+    @pytest.fixture(autouse=True)
+    def _clean_thumbnail_state(self):
+        with main._thumbnail_lock:
+            main._thumbnail_pending.clear()
+            main._thumbnail_failed.clear()
+
     def test_returns_none_when_file_missing(self, test_config, media_dir, thumb_dir):
         result = main.generate_thumbnail("nonexistent.mp4")
         assert result is None
@@ -244,11 +293,13 @@ class TestGenerateThumbnail:
         result = main.generate_thumbnail("video.mp4")
         assert result == "video.jpg"
 
-    def test_generates_new_thumbnail_with_ffmpeg(self, test_config, media_dir, thumb_dir):
+    def test_generates_new_thumbnail_in_background(self, test_config, media_dir, thumb_dir):
         (media_dir / "video.mp4").write_bytes(b"fake")
-        with patch("subprocess.run"):
+        with patch.object(main, "_thumbnail_executor") as mock_executor:
             result = main.generate_thumbnail("video.mp4")
-        assert result == "video.jpg"
+        assert result is None
+        assert mock_executor.submit.called
+        assert not (thumb_dir / "video.jpg").exists()
 
     def test_ffmpeg_failure_returns_none(self, test_config, media_dir, thumb_dir):
         (media_dir / "broken.mp4").write_bytes(b"garbage")
@@ -256,17 +307,23 @@ class TestGenerateThumbnail:
             result = main.generate_thumbnail("broken.mp4")
         assert result is None
 
-    def test_passes_correct_ffmpeg_args(self, test_config, media_dir, thumb_dir):
-        (media_dir / "test.mkv").write_bytes(b"fake")
-        with patch("subprocess.run") as mock_run:
-            main.generate_thumbnail("test.mkv")
-        mock_run.assert_called_once_with(
-            ["ffmpeg", "-i", str(media_dir / "test.mkv"),
-             "-ss", "00:00:01.000",
-             "-vframes", "1", "-y", str(thumb_dir / "test.jpg"),
-             "-loglevel", "error"],
-            check=True,
-        )
+    def test_skips_pending_thumbnails(self, test_config, media_dir, thumb_dir):
+        (media_dir / "clip.mp4").write_bytes(b"fake")
+        with main._thumbnail_lock:
+            main._thumbnail_pending.add("clip.mp4")
+        with patch.object(main, "_thumbnail_executor") as mock_executor:
+            result = main.generate_thumbnail("clip.mp4")
+        assert result is None
+        mock_executor.submit.assert_not_called()
+
+    def test_skips_failed_thumbnails(self, test_config, media_dir, thumb_dir):
+        (media_dir / "broken.mp4").write_bytes(b"fake")
+        with main._thumbnail_lock:
+            main._thumbnail_failed.add("broken.mp4")
+        with patch.object(main, "_thumbnail_executor") as mock_executor:
+            result = main.generate_thumbnail("broken.mp4")
+        assert result is None
+        mock_executor.submit.assert_not_called()
 
 
 # =============================================================================
@@ -331,7 +388,8 @@ class TestIndexRoute:
     def test_includes_download_buttons(self, client, test_config, media_dir, sample_files):
         resp = client.get("/")
         html = resp.data.decode()
-        assert html.count("fa-download") == len(sample_files)
+        assert html.count('btn-download flex-1') == len(sample_files)
+        assert "Download ZIP" in html
 
     def test_shows_file_sizes(self, client, test_config, media_dir, sample_files):
         resp = client.get("/")
@@ -376,12 +434,20 @@ class TestIndexRoute:
         html = resp.data.decode()
         assert "thumbnails/" not in html
 
-    def test_video_thumbnail_generated(self, client, test_config, media_dir, thumb_dir):
+    def test_video_thumbnail_uses_cached(self, client, test_config, media_dir, thumb_dir):
+        (media_dir / "clip.mp4").write_bytes(b"fake video")
+        thumb_file = thumb_dir / "clip.jpg"
+        thumb_file.write_bytes(b"cached thumb")
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "thumbnails/clip.jpg" in html
+
+    def test_video_thumbnail_enqueued_when_missing(self, client, test_config, media_dir, thumb_dir):
         (media_dir / "clip.mp4").write_bytes(b"fake video")
         with patch("subprocess.run"):
             resp = client.get("/")
         html = resp.data.decode()
-        assert "thumbnails/clip.jpg" in html
+        assert "thumbnails/clip.jpg" not in html
 
 
 class TestDirectoryBrowsing:
@@ -1676,3 +1742,500 @@ class TestParentDir:
 
     def test_two_levels(self):
         assert main.parent_dir("a/b") == "a"
+
+
+# =============================================================================
+# Trash tests
+# =============================================================================
+
+class TestTrashFunctions:
+    @pytest.fixture(autouse=True)
+    def _clean_trash(self, test_config):
+        main._empty_trash()
+
+    def test_trash_file_moves_and_tracks(self, test_config, media_dir):
+        (media_dir / "todel.txt").write_bytes(b"data")
+        filepath = os.path.join(config.MEDIA_FOLDER, "todel.txt")
+        result = main._trash_file(filepath, "")
+        assert result is not False
+        assert not os.path.isfile(filepath)
+        meta = main._load_trash_metadata()
+        assert len(meta) == 1
+
+    def test_trash_nonexistent_returns_false(self, test_config):
+        result = main._trash_file("/nonexistent/file.txt", "")
+        assert result is False
+
+    def test_restore_file_works(self, test_config, media_dir):
+        (media_dir / "restore_me.txt").write_bytes(b"data")
+        filepath = os.path.join(config.MEDIA_FOLDER, "restore_me.txt")
+        trash_name = main._trash_file(filepath, "")
+        assert trash_name is not False
+        assert main._restore_file(trash_name) is True
+        assert os.path.isfile(filepath)
+
+    def test_restore_nonexistent_trash_returns_false(self, test_config):
+        assert main._restore_file("nonexistent_trash_name") is False
+
+    def test_list_trash_empty(self, test_config):
+        main._empty_trash()
+        items = main._list_trash()
+        assert items == []
+
+    def test_list_trash_after_delete(self, test_config, media_dir):
+        main._empty_trash()
+        (media_dir / "file.mp4").write_bytes(b"data")
+        main._trash_file(os.path.join(config.MEDIA_FOLDER, "file.mp4"), "")
+        items = main._list_trash()
+        assert len(items) == 1
+        assert items[0]["original_name"] == "file.mp4"
+
+    def test_empty_trash_removes_all(self, test_config, media_dir):
+        (media_dir / "f1.txt").write_bytes(b"data")
+        (media_dir / "f2.txt").write_bytes(b"data")
+        main._trash_file(os.path.join(config.MEDIA_FOLDER, "f1.txt"), "")
+        main._trash_file(os.path.join(config.MEDIA_FOLDER, "f2.txt"), "")
+        assert len(main._list_trash()) == 2
+        main._empty_trash()
+        assert len(main._list_trash()) == 0
+
+    def test_delete_route_returns_trash_name(self, test_config, client, media_dir):
+        (media_dir / "del.txt").write_bytes(b"data")
+        resp = client.post("/delete", data={"filename": "del.txt"})
+        assert resp.status_code == 200
+        assert resp.json["success"] is True
+        assert "trash_name" in resp.json
+        assert not (media_dir / "del.txt").exists()
+
+    def test_trash_route_renders(self, test_config, client, media_dir):
+        resp = client.get("/trash")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "Trash" in html
+
+    def test_trash_restore_route(self, test_config, client, media_dir):
+        (media_dir / "restore.txt").write_bytes(b"data")
+        main._trash_file(os.path.join(config.MEDIA_FOLDER, "restore.txt"), "")
+        items = main._list_trash()
+        assert len(items) == 1
+        resp = client.post("/trash/restore", data={"trash_name": items[0]["trash_name"]})
+        assert resp.status_code == 200
+        assert resp.json["success"] is True
+        assert (media_dir / "restore.txt").exists()
+
+    def test_trash_empty_route(self, test_config, client, media_dir):
+        (media_dir / "e.txt").write_bytes(b"data")
+        main._trash_file(os.path.join(config.MEDIA_FOLDER, "e.txt"), "")
+        resp = client.post("/trash/empty")
+        assert resp.status_code == 200
+        assert resp.json["success"] is True
+        assert len(main._list_trash()) == 0
+
+    def test_delete_route_file_not_found(self, test_config, client):
+        resp = client.post("/delete", data={"filename": "ghost.txt"})
+        assert resp.status_code == 404
+
+
+# =============================================================================
+# Batch operation tests
+# =============================================================================
+
+class TestBatchDelete:
+    @pytest.fixture(autouse=True)
+    def _clean_trash(self, test_config):
+        main._empty_trash()
+
+    def test_batch_delete_single(self, test_config, client, media_dir):
+        (media_dir / "a.txt").write_bytes(b"data")
+        resp = client.post("/batch-delete", json={"files": [{"filename": "a.txt", "dir": ""}]})
+        assert resp.status_code == 200
+        assert resp.json["succeeded"] == 1
+        assert not (media_dir / "a.txt").exists()
+
+    def test_batch_delete_multiple(self, test_config, client, media_dir):
+        (media_dir / "a.txt").write_bytes(b"a")
+        (media_dir / "b.txt").write_bytes(b"b")
+        resp = client.post("/batch-delete", json={
+            "files": [{"filename": "a.txt", "dir": ""}, {"filename": "b.txt", "dir": ""}]
+        })
+        assert resp.status_code == 200
+        assert resp.json["succeeded"] == 2
+        assert not (media_dir / "a.txt").exists()
+        assert not (media_dir / "b.txt").exists()
+
+    def test_batch_delete_partial_missing(self, test_config, client, media_dir):
+        (media_dir / "a.txt").write_bytes(b"a")
+        resp = client.post("/batch-delete", json={
+            "files": [{"filename": "a.txt", "dir": ""}, {"filename": "ghost.txt", "dir": ""}]
+        })
+        assert resp.status_code == 200
+        assert resp.json["succeeded"] == 1
+        assert resp.json["total"] == 2
+
+    def test_batch_delete_no_files(self, test_config, client):
+        resp = client.post("/batch-delete", json={"files": []})
+        assert resp.status_code == 200
+
+    def test_batch_delete_missing_payload(self, test_config, client):
+        resp = client.post("/batch-delete", json={})
+        assert resp.status_code == 400
+
+    def test_batch_delete_in_subdir(self, test_config, client, media_dir):
+        sub = media_dir / "sub"
+        sub.mkdir()
+        (sub / "f.txt").write_bytes(b"data")
+        resp = client.post("/batch-delete", json={
+            "files": [{"filename": "f.txt", "dir": "sub"}]
+        })
+        assert resp.status_code == 200
+        assert resp.json["succeeded"] == 1
+        assert not (sub / "f.txt").exists()
+
+    def test_batch_delete_blocked_without_key(self, test_config, client, media_dir):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        (media_dir / "f.txt").write_bytes(b"data")
+        resp = client.post("/batch-delete", json={
+            "files": [{"filename": "f.txt", "dir": ""}]
+        })
+        assert resp.status_code == 401
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+
+
+class TestBatchDownload:
+    def test_batch_download_single(self, test_config, client, media_dir):
+        (media_dir / "f.txt").write_bytes(b"hello")
+        resp = client.post("/batch-download", json={
+            "files": [{"filename": "f.txt", "dir": ""}]
+        })
+        assert resp.status_code == 200
+        assert resp.content_type.startswith("application/zip")
+
+    def test_batch_download_multiple(self, test_config, client, media_dir):
+        (media_dir / "a.txt").write_bytes(b"aaa")
+        (media_dir / "b.txt").write_bytes(b"bbb")
+        resp = client.post("/batch-download", json={
+            "files": [{"filename": "a.txt", "dir": ""}, {"filename": "b.txt", "dir": ""}]
+        })
+        assert resp.status_code == 200
+        assert resp.content_type.startswith("application/zip")
+
+    def test_batch_download_no_files(self, test_config, client):
+        resp = client.post("/batch-download", json={"files": []})
+        assert resp.status_code == 200
+        assert resp.content_type.startswith("application/zip")
+
+    def test_batch_download_missing_payload(self, test_config, client):
+        resp = client.post("/batch-download", json={})
+        assert resp.status_code == 400
+
+    def test_batch_download_includes_filenames(self, test_config, client, media_dir):
+        (media_dir / "report.txt").write_bytes(b"content")
+        resp = client.post("/batch-download", json={
+            "files": [{"filename": "report.txt", "dir": ""}]
+        })
+        assert resp.status_code == 200
+        import zipfile
+        with zipfile.ZipFile(BytesIO(resp.data)) as zf:
+            names = zf.namelist()
+            assert "report.txt" in names
+            assert zf.read("report.txt") == b"content"
+
+
+class TestCreateDir:
+    def test_creates_directory(self, test_config, client, media_dir):
+        resp = client.post("/create-dir", data={"dirname": "newfolder", "dir": ""})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert (media_dir / "newfolder").is_dir()
+
+    def test_nested_directory(self, test_config, client, media_dir):
+        (media_dir / "sub").mkdir()
+        resp = client.post("/create-dir", data={"dirname": "inner", "dir": "sub"})
+        assert resp.status_code == 200
+        assert (media_dir / "sub" / "inner").is_dir()
+
+    def test_duplicate_directory(self, test_config, client, media_dir):
+        (media_dir / "exists").mkdir()
+        resp = client.post("/create-dir", data={"dirname": "exists", "dir": ""})
+        assert resp.status_code == 409
+
+    def test_missing_name(self, test_config, client):
+        resp = client.post("/create-dir", data={"dirname": "", "dir": ""})
+        assert resp.status_code == 400
+
+    def test_invalid_name_forbidden_chars(self, test_config, client):
+        resp = client.post("/create-dir", data={"dirname": "a/b", "dir": ""})
+        assert resp.status_code == 400
+
+
+class TestDirTree:
+    def test_lists_subdirectories(self, test_config, client, media_dir):
+        (media_dir / "sub1").mkdir()
+        (media_dir / "sub2").mkdir()
+        resp = client.get("/dir-tree?dir=")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        names = [d["name"] for d in data]
+        assert "sub1" in names
+        assert "sub2" in names
+
+    def test_ignores_files_and_hidden(self, test_config, client, media_dir):
+        (media_dir / "sub").mkdir()
+        (media_dir / "file.txt").write_bytes(b"x")
+        (media_dir / ".hidden").mkdir()
+        resp = client.get("/dir-tree?dir=")
+        names = [d["name"] for d in resp.get_json()]
+        assert "sub" in names
+        assert "file.txt" not in names
+        assert ".hidden" not in names
+
+
+class TestMoveFile:
+    def test_moves_file_to_subdirectory(self, test_config, client, media_dir):
+        (media_dir / "src.txt").write_bytes(b"move me")
+        (media_dir / "target").mkdir()
+        resp = client.post("/move-file", data={
+            "filename": "src.txt", "source_dir": "", "target_dir": "target"
+        })
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+        assert not (media_dir / "src.txt").exists()
+        assert (media_dir / "target" / "src.txt").exists()
+        assert (media_dir / "target" / "src.txt").read_bytes() == b"move me"
+
+    def test_moves_file_from_subdirectory(self, test_config, client, media_dir):
+        (media_dir / "sub").mkdir()
+        (media_dir / "sub" / "f.txt").write_bytes(b"data")
+        resp = client.post("/move-file", data={
+            "filename": "f.txt", "source_dir": "sub", "target_dir": ""
+        })
+        assert resp.status_code == 200
+        assert not (media_dir / "sub" / "f.txt").exists()
+        assert (media_dir / "f.txt").exists()
+
+    def test_auto_rename_on_conflict(self, test_config, client, media_dir):
+        (media_dir / "f.txt").write_bytes(b"original")
+        (media_dir / "sub").mkdir()
+        (media_dir / "sub" / "f.txt").write_bytes(b"conflict")
+        resp = client.post("/move-file", data={
+            "filename": "f.txt", "source_dir": "", "target_dir": "sub"
+        })
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+        assert not (media_dir / "f.txt").exists()
+        found = [p.name for p in (media_dir / "sub").iterdir()]
+        assert "f.txt" in found
+        assert any(p.startswith("f_") and p.endswith(".txt") for p in found)
+
+    def test_missing_file(self, test_config, client):
+        resp = client.post("/move-file", data={
+            "filename": "nonexistent.txt", "source_dir": "", "target_dir": ""
+        })
+        assert resp.status_code == 404
+
+
+class TestCopyFile:
+    def test_copies_file_to_subdirectory(self, test_config, client, media_dir):
+        (media_dir / "src.txt").write_bytes(b"copy me")
+        (media_dir / "target").mkdir()
+        resp = client.post("/copy-file", data={
+            "filename": "src.txt", "source_dir": "", "target_dir": "target"
+        })
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+        assert (media_dir / "src.txt").exists()
+        assert (media_dir / "target" / "src.txt").exists()
+        assert (media_dir / "target" / "src.txt").read_bytes() == b"copy me"
+
+    def test_auto_rename_on_conflict(self, test_config, client, media_dir):
+        (media_dir / "f.txt").write_bytes(b"original")
+        (media_dir / "sub").mkdir()
+        (media_dir / "sub" / "f.txt").write_bytes(b"existing")
+        resp = client.post("/copy-file", data={
+            "filename": "f.txt", "source_dir": "", "target_dir": "sub"
+        })
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+        assert (media_dir / "f.txt").exists()
+        found = list((media_dir / "sub").iterdir())
+        assert len(found) == 2
+
+    def test_missing_file(self, test_config, client):
+        resp = client.post("/copy-file", data={
+            "filename": "nonexistent.txt", "source_dir": "", "target_dir": ""
+        })
+        assert resp.status_code == 404
+
+
+class TestIndexPageDirectoryManagement:
+    def test_new_folder_button_present(self, test_config, client):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "New Folder" in html
+        assert "fa-folder-plus" in html
+
+    def test_move_copy_buttons_on_file_cards(self, test_config, client, media_dir, sample_files):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "fa-arrows-alt" in html
+        assert "fa-copy" in html
+
+    def test_move_copy_modal_exists(self, test_config, client):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "moveCopyModal" in html
+        assert "Target directory" in html
+
+
+class TestMetadata:
+    def test_metadata_route_requires_filename(self, test_config, client):
+        resp = client.post("/api/metadata", json={})
+        assert resp.status_code == 400
+
+    def test_metadata_missing_file(self, test_config, client):
+        resp = client.post("/api/metadata", json={"filename": "nope.txt", "dir": ""})
+        assert resp.status_code == 404
+
+    def test_metadata_image_file(self, test_config, client, media_dir):
+        pytest.importorskip("PIL")
+        from PIL import Image
+        img = Image.new("RGB", (64, 48))
+        img.save(media_dir / "test.png")
+        resp = client.post("/api/metadata", json={"filename": "test.png", "dir": ""})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["width"] == 64
+        assert data["height"] == 48
+        assert "size" in data
+        assert "modified" in data
+
+    def test_metadata_video_file(self, test_config, client, media_dir):
+        import subprocess
+        result = subprocess.run(
+            ['ffprobe', '-version'], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            pytest.skip("ffprobe not available")
+        vid = media_dir / "test_vid.mp4"
+        subprocess.run(
+            ['ffmpeg', '-f', 'lavfi', '-i', 'color=c=red:s=32x32:d=0.5',
+             '-c:v', 'libx264', '-preset', 'ultrafast', str(vid)],
+            capture_output=True
+        )
+        resp = client.post("/api/metadata", json={"filename": "test_vid.mp4", "dir": ""})
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["width"] == 32
+        assert data["height"] == 32
+        assert data["duration"] > 0
+
+    def test_metadata_button_on_image_card(self, test_config, client, media_dir, sample_files):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "fa-info-circle" in html
+
+    def test_metadata_modal_exists(self, test_config, client):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "metadataModal" in html
+
+    def test_metadata_route_protected(self, test_config, client):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        config.ACCESS_KEY = "secret"
+        resp = client.post("/api/metadata", json={"filename": "x.txt", "dir": ""})
+        assert resp.status_code == 401
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+
+
+class TestGallery:
+    def test_gallery_images_returns_images(self, test_config, client, media_dir):
+        (media_dir / "photo.jpg").write_bytes(b"fake")
+        (media_dir / "doc.txt").write_bytes(b"text")
+        (media_dir / "sub").mkdir()
+        resp = client.get("/gallery-images?dir=")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        names = [d["name"] for d in data]
+        assert "photo.jpg" in names
+        assert "doc.txt" not in names
+
+    def test_gallery_nested_dir(self, test_config, client, media_dir):
+        (media_dir / "sub").mkdir()
+        (media_dir / "sub" / "nested.png").write_bytes(b"fake")
+        resp = client.get("/gallery-images?dir=sub")
+        data = resp.get_json()
+        assert len(data) == 1
+        assert data[0]["name"] == "nested.png"
+
+    def test_gallery_no_images(self, test_config, client, media_dir):
+        resp = client.get("/gallery-images?dir=")
+        assert resp.get_json() == []
+
+    def test_gallery_route_protected(self, test_config, client):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        config.ACCESS_KEY = "secret"
+        resp = client.get("/gallery-images?dir=")
+        assert resp.status_code == 401
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False
+
+    def test_gallery_view_toggle_exists(self, test_config, client):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "fa-images" in html
+        assert "Gallery" in html
+
+    def test_lightbox_exists(self, test_config, client):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "galleryLightbox" in html
+        assert "lightboxImage" in html
+
+
+class TestAutoRefresh:
+    def test_poll_changes_returns_hash(self, test_config, client, media_dir):
+        (media_dir / "f.txt").write_bytes(b"data")
+        resp = client.get("/poll-changes?dir=")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "hash" in data
+        assert len(data["hash"]) == 64
+
+    def test_poll_hash_changes_on_new_file(self, test_config, client, media_dir):
+        (media_dir / "a.txt").write_bytes(b"a")
+        resp1 = client.get("/poll-changes?dir=")
+        h1 = resp1.get_json()["hash"]
+        (media_dir / "b.txt").write_bytes(b"b")
+        resp2 = client.get("/poll-changes?dir=")
+        h2 = resp2.get_json()["hash"]
+        assert h1 != h2
+
+    def test_poll_hash_stable(self, test_config, client, media_dir):
+        (media_dir / "f.txt").write_bytes(b"data")
+        resp1 = client.get("/poll-changes?dir=")
+        resp2 = client.get("/poll-changes?dir=")
+        assert resp1.get_json()["hash"] == resp2.get_json()["hash"]
+
+    def test_poll_hash_empty_dir(self, test_config, client, media_dir):
+        resp = client.get("/poll-changes?dir=")
+        assert resp.status_code == 200
+
+    def test_poll_nested_dir(self, test_config, client, media_dir):
+        (media_dir / "sub").mkdir()
+        (media_dir / "sub" / "f.txt").write_bytes(b"data")
+        resp = client.get("/poll-changes?dir=sub")
+        assert resp.status_code == 200
+        assert len(resp.get_json()["hash"]) == 64
+
+    def test_auto_refresh_toggle_exists(self, test_config, client):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert "autoRefreshToggle" in html
+        assert "fa-sync-alt" in html
+
+    def test_poll_route_protected(self, test_config, client):
+        config.WEBSITE_ACCESS_KEY_REQUIRED = True
+        config.ACCESS_KEY = "secret"
+        resp = client.get("/poll-changes?dir=")
+        assert resp.status_code == 401
+        config.WEBSITE_ACCESS_KEY_REQUIRED = False

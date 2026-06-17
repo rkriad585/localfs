@@ -66,6 +66,14 @@ def mute_console(monkeypatch):
     monkeypatch.setattr(main.console, "print", lambda *a, **kw: None)
 
 
+@pytest.fixture(autouse=True)
+def clean_thumbnail_state():
+    with main._thumbnail_lock:
+        main._thumbnail_pending.clear()
+        main._thumbnail_failed.clear()
+    yield
+
+
 @pytest.fixture
 def test_config(monkeypatch, media_dir, data_dir, thumb_dir):
     monkeypatch.setattr(config, "MEDIA_FOLDER", str(media_dir))

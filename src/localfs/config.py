@@ -47,3 +47,8 @@ SECRET_KEY = secrets.token_hex(32)
 
 # User management
 USERS_FILE = os.path.join(BASE_DIR, "users.json")
+
+# Trash / Recycle Bin
+TRASH_FOLDER = os.path.join(BASE_DIR, "trash")
+TRASH_TTL_DAYS = 30
+TRASH_METADATA_FILE = "trash-metadata.json"

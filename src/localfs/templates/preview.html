@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Preview: {{ filename }}{% endblock %}
+{% block head %}
+<style>
+    .preview-container { max-width: 1000px; margin: 0 auto; }
+    pre { overflow-x: auto; white-space: pre; tab-size: 4; }
+    .markdown-body { line-height: 1.7; }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3,
+    .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+        margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 700;
+    }
+    .markdown-body h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .markdown-body h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.25em; }
+    .markdown-body h3 { font-size: 1.25em; }
+    .markdown-body p { margin: 0.75em 0; }
+    .markdown-body ul, .markdown-body ol { padding-left: 2em; margin: 0.5em 0; }
+    .markdown-body li { margin: 0.25em 0; }
+    .markdown-body blockquote {
+        border-left: 4px solid var(--accent); padding: 0.5em 1em;
+        margin: 1em 0; background: var(--bg-secondary); border-radius: 0 0.5rem 0.5rem 0;
+    }
+    .markdown-body code {
+        background: var(--bg-secondary); padding: 0.15em 0.4em;
+        border-radius: 0.25rem; font-size: 0.875em;
+    }
+    .markdown-body pre { background: var(--bg-secondary); padding: 1em; border-radius: 0.5rem; overflow-x: auto; }
+    .markdown-body pre code { background: none; padding: 0; border-radius: 0; }
+    .markdown-body table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 0.5em 0.75em; text-align: left; }
+    .markdown-body th { background: var(--bg-secondary); font-weight: 600; }
+    .markdown-body img { max-width: 100%; border-radius: 0.5rem; }
+    .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+    .markdown-body a { color: var(--accent); }
+    .markdown-body a:hover { color: var(--accent-hover); }
+    .pdf-frame { width: 100%; height: 85vh; border: none; border-radius: 0.5rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container mx-auto px-4 py-8 preview-container">
+    <header class="mb-6">
+        <div class="flex items-center justify-between">
+            <a href="{{ url_for('index', key=request.args.get('key'), dir=request.args.get('dir')) }}"
+               class="text-accent hover:text-accent-hover transition-colors">
+                &larr; Back to Library
+            </a>
+            <div class="flex space-x-2">
+                <span class="text-xs text-muted bg-card px-3 py-1 rounded-full uppercase tracking-wider">{{ preview_type }}</span>
+                <a href="{{ url_for('serve_media', filename=filepath) }}" download
+                   class="btn-download text-sm">
+                    <i class="fas fa-download mr-1"></i>Download
+                </a>
+            </div>
+        </div>
+        <h1 class="text-2xl font-bold text-primary truncate mt-4" title="{{ filename }}">{{ filename }}</h1>
+    </header>
+
+    {% if preview_type == 'pdf' %}
+    <iframe src="{{ url_for('serve_media', filename=filepath) }}" class="pdf-frame bg-card"></iframe>
+
+    {% elif preview_type == 'rendered_markdown' %}
+    <div class="markdown-body text-primary bg-card rounded-lg p-6 shadow-card">
+        {{ content|safe }}
+    </div>
+    <details class="mt-4">
+        <summary class="text-muted cursor-pointer hover:text-accent text-sm">View raw</summary>
+        <pre class="bg-secondary text-primary rounded-lg p-4 mt-2 text-sm leading-relaxed overflow-x-auto"><code class="language-{{ language }}">{{ raw_content }}</code></pre>
+    </details>
+
+    {% elif preview_type == 'code' %}
+    <pre class="bg-card text-primary rounded-lg p-4 shadow-card text-sm leading-relaxed"><code class="language-{{ language }}">{{ content }}</code></pre>
+
+    {% else %}
+    <pre class="bg-card text-primary rounded-lg p-4 shadow-card text-sm leading-relaxed whitespace-pre-wrap">{{ content }}</pre>
+    {% endif %}
+
+    <div class="mt-6 text-center">
+        <p class="text-xs text-muted">
+            File size: {{ file_size }} &middot;
+            <a href="{{ url_for('serve_media', filename=filepath) }}" download
+               class="text-accent hover:text-accent-hover">Download</a>
+        </p>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script>hljs.highlightAll();</script>
+{% endblock %}

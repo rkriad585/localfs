@@ -33,6 +33,10 @@
             <img src="{{ url_for('static', filename='logo.svg') }}" alt="" class="h-7 w-7">
             <span class="font-bold text-primary text-sm tracking-wider">localfs</span>
         </a>
+        <a href="{{ url_for('trash_list', key=request.args.get('key')) if request.args.get('key') else url_for('trash_list') }}"
+           class="ml-auto text-muted hover:text-accent transition-colors text-sm" title="Trash">
+            <i class="fas fa-trash-alt"></i>
+        </a>
     </header>
     <main class="flex-grow flex flex-col">
         {% block content %}{% endblock %}

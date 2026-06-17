@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Trash - localfs{% endblock %}
+{% block head %}
+<style>
+    .trash-item { transition: background-color 0.15s; }
+    .trash-item:hover { background-color: var(--bg-secondary); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-4xl">
+    <header class="mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-primary">Trash</h1>
+            <p class="text-muted mt-1">Deleted files are moved here and auto-purged after 30 days</p>
+        </div>
+        <div class="flex space-x-3">
+            <a href="{{ url_for('index', key=request.args.get('key')) if request.args.get('key') else url_for('index') }}"
+               class="btn-accent text-sm">
+                <i class="fas fa-arrow-left mr-2"></i>Back to Library
+            </a>
+        </div>
+    </header>
+
+    {% if items %}
+    <div class="mb-4 flex justify-end">
+        <button onclick="emptyTrash()"
+                class="text-sm text-muted hover:text-red-500 transition-colors px-3 py-1 rounded bg-card hover:bg-secondary">
+            <i class="fas fa-trash-alt mr-1"></i>Empty Trash
+        </button>
+    </div>
+
+    <div class="bg-card rounded-lg shadow-card overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-color text-muted">
+                    <th class="text-left px-4 py-3 font-semibold">Name</th>
+                    <th class="text-left px-4 py-3 font-semibold">Original Location</th>
+                    <th class="text-left px-4 py-3 font-semibold">Deleted</th>
+                    <th class="text-left px-4 py-3 font-semibold">Size</th>
+                    <th class="text-right px-4 py-3 font-semibold">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr class="trash-item border-b border-color">
+                    <td class="px-4 py-3 text-primary">
+                        <i class="fas {{ 'fa-file-video' if item.file_type == 'video' else 'fa-file-audio' if item.file_type == 'audio' else 'fa-file-image' if item.file_type == 'image' else 'fa-file-alt' }} text-muted mr-2"></i>
+                        {{ item.original_name }}
+                    </td>
+                    <td class="px-4 py-3 text-muted">
+                        {% if item.original_path %}{{ item.original_path }}{% else %}/{% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-muted">{{ item.deleted_at[:10] }}</td>
+                    <td class="px-4 py-3 text-muted">{{ item.size }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <button onclick="restoreFile('{{ item.trash_name }}')"
+                                class="text-accent hover:text-accent-hover transition-colors text-sm">
+                            <i class="fas fa-undo mr-1"></i>Restore
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-center py-24">
+        <i class="fas fa-trash-alt text-6xl text-muted mb-4"></i>
+        <p class="text-xl text-muted">Trash is empty</p>
+        <p class="text-sm text-muted mt-2">Deleted files will appear here</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function restoreFile(trashName) {
+    var key = new URLSearchParams(window.location.search).get('key') || '';
+    var formData = new FormData();
+    formData.append('trash_name', trashName);
+    fetch('{{ url_for("trash_restore") }}' + (key ? '?key=' + key : ''), {
+        method: 'POST',
+        body: formData
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Could not restore file'));
+        }
+    }).catch(function() {
+        alert('Error restoring file');
+    });
+}
+
+function emptyTrash() {
+    if (!confirm('Empty trash? This cannot be undone.')) return;
+    var key = new URLSearchParams(window.location.search).get('key') || '';
+    fetch('{{ url_for("trash_empty") }}' + (key ? '?key=' + key : ''), {
+        method: 'POST'
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            location.reload();
+        }
+    }).catch(function() {
+        alert('Error emptying trash');
+    });
+}
+</script>
+{% endblock %}

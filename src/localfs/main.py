@@ -3,10 +3,12 @@
 import os
 import sys
 import json
+import zipfile
 import subprocess
 import importlib.util
 import shutil
 import mimetypes
+from io import BytesIO
 from datetime import datetime
 
 from . import config
@@ -132,6 +134,8 @@ check_and_install_dependencies()
 check_ffmpeg()
 
 from flask import Flask, render_template, send_from_directory, send_file, request, jsonify, g, abort, redirect, url_for, session
+from concurrent.futures import ThreadPoolExecutor
+import threading
 from werkzeug.security import generate_password_hash, check_password_hash
 from rich.console import Console
 import click
@@ -210,6 +214,7 @@ def setup_directories():
     os.makedirs(config.MEDIA_FOLDER, exist_ok=True)
     os.makedirs(config.DATA_FOLDER, exist_ok=True)
     os.makedirs(config.THUMBNAIL_FOLDER, exist_ok=True)
+    os.makedirs(config.TRASH_FOLDER, exist_ok=True)
 
 def log_activity(event_type, details):
     log_file_path = os.path.join(config.DATA_FOLDER, config.DATA_FILE)
@@ -234,6 +239,158 @@ def log_activity(event_type, details):
     except Exception as e:
         console.print(f"[bold red]Error logging activity:[/bold red] {e}")
 
+
+# ─── Trash / Recycle Bin ──────────────────────────────────────────────────────
+
+def _load_trash_metadata():
+    path = os.path.join(config.TRASH_FOLDER, config.TRASH_METADATA_FILE)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_trash_metadata(meta):
+    os.makedirs(config.TRASH_FOLDER, exist_ok=True)
+    path = os.path.join(config.TRASH_FOLDER, config.TRASH_METADATA_FILE)
+    try:
+        with open(path, 'w') as f:
+            json.dump(meta, f, indent=4)
+    except Exception as e:
+        console.print(f"[bold red]Error saving trash metadata:[/bold red] {e}")
+
+
+def _trash_file(filepath, relative_path=""):
+    if not os.path.isfile(filepath):
+        return False
+    os.makedirs(config.TRASH_FOLDER, exist_ok=True)
+    filename = os.path.basename(filepath)
+    trash_name = f"{int(datetime.now().timestamp())}_{filename}"
+    trash_path = os.path.join(config.TRASH_FOLDER, trash_name)
+    try:
+        shutil.move(filepath, trash_path)
+    except Exception as e:
+        console.print(f"[bold red]Error moving file to trash:[/bold red] {e}")
+        return False
+    meta = _load_trash_metadata()
+    meta[trash_name] = {
+        "original_name": filename,
+        "original_path": relative_path,
+        "trash_name": trash_name,
+        "deleted_at": datetime.now().isoformat(),
+        "expires_at": (datetime.now().isoformat()),
+    }
+    _save_trash_metadata(meta)
+    _purge_old_trash()
+    return trash_name
+
+
+def _restore_file(trash_name):
+    meta = _load_trash_metadata()
+    entry = meta.pop(trash_name, None)
+    if entry is None:
+        return False
+    _save_trash_metadata(meta)
+    trash_path = os.path.join(config.TRASH_FOLDER, trash_name)
+    if not os.path.isfile(trash_path):
+        return False
+    orig_dir = resolve_media_path(entry["original_path"]) if entry["original_path"] else config.MEDIA_FOLDER
+    if orig_dir is None:
+        orig_dir = config.MEDIA_FOLDER
+    os.makedirs(orig_dir, exist_ok=True)
+    dest = os.path.join(orig_dir, entry["original_name"])
+    counter = 1
+    while os.path.exists(dest):
+        base, ext = os.path.splitext(entry["original_name"])
+        dest = os.path.join(orig_dir, f"{base}_{counter}{ext}")
+        counter += 1
+    try:
+        shutil.move(trash_path, dest)
+    except Exception as e:
+        console.print(f"[bold red]Error restoring file:[/bold red] {e}")
+        return False
+    return True
+
+
+def _purge_old_trash():
+    meta = _load_trash_metadata()
+    now = datetime.now()
+    changed = False
+    expired = []
+    for trash_name, entry in list(meta.items()):
+        try:
+            deleted = datetime.fromisoformat(entry["deleted_at"])
+            delta = (now - deleted).days
+            if delta > config.TRASH_TTL_DAYS:
+                expired.append(trash_name)
+        except (ValueError, KeyError):
+            expired.append(trash_name)
+    for trash_name in expired:
+        meta.pop(trash_name, None)
+        trash_path = os.path.join(config.TRASH_FOLDER, trash_name)
+        if os.path.isfile(trash_path):
+            try:
+                os.remove(trash_path)
+            except OSError:
+                pass
+        changed = True
+    if changed:
+        _save_trash_metadata(meta)
+
+
+def _list_trash():
+    _purge_old_trash()
+    meta = _load_trash_metadata()
+    items = []
+    for trash_name, entry in meta.items():
+        filepath = os.path.join(config.TRASH_FOLDER, trash_name)
+        size = get_file_size(filepath) if os.path.isfile(filepath) else "?"
+        items.append({
+            "trash_name": trash_name,
+            "original_name": entry.get("original_name", trash_name),
+            "original_path": entry.get("original_path", ""),
+            "deleted_at": entry.get("deleted_at", ""),
+            "size": size,
+            "file_type": get_file_type(entry.get("original_name", trash_name)),
+        })
+    items.sort(key=lambda x: x.get("deleted_at", ""), reverse=True)
+    return items
+
+
+def _empty_trash():
+    meta = _load_trash_metadata()
+    for trash_name in list(meta.keys()):
+        trash_path = os.path.join(config.TRASH_FOLDER, trash_name)
+        if os.path.isfile(trash_path):
+            try:
+                os.remove(trash_path)
+            except OSError:
+                pass
+    _save_trash_metadata({})
+
+
+PREVIEWABLE_EXTENSIONS = {
+    '.txt': 'text', '.py': 'code', '.js': 'code', '.ts': 'code',
+    '.jsx': 'code', '.tsx': 'code', '.html': 'code', '.htm': 'code',
+    '.css': 'code', '.scss': 'code', '.json': 'code', '.xml': 'code',
+    '.yaml': 'code', '.yml': 'code', '.toml': 'code', '.ini': 'code',
+    '.cfg': 'code', '.conf': 'code', '.sh': 'code', '.bash': 'code',
+    '.zsh': 'code', '.fish': 'code', '.log': 'text', '.csv': 'text',
+    '.md': 'markdown', '.mdx': 'markdown', '.rst': 'markdown',
+    '.sql': 'code', '.rb': 'code', '.go': 'code', '.rs': 'code',
+    '.java': 'code', '.c': 'code', '.cpp': 'code', '.h': 'code',
+    '.hpp': 'code', '.php': 'code', '.r': 'code', '.lua': 'code',
+    '.pl': 'code', '.pm': 'code', '.swift': 'code', '.kt': 'code',
+    '.scala': 'code', '.groovy': 'code', '.gradle': 'code',
+    '.bat': 'code', '.ps1': 'code', '.env': 'text', '.gitignore': 'text',
+    '.dockerignore': 'text', '.editorconfig': 'text',
+    '.vue': 'code', '.svelte': 'code', '.astro': 'code',
+    '.tex': 'text', '.pdf': 'pdf',
+}
+
 def get_file_type(filename):
     image_ext = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
     video_ext = ['.mp4', '.webm', '.ogg', '.mkv', '.mov', '.avi']
@@ -255,41 +412,156 @@ def get_mime_type(filename):
 def is_media_playable(file_type):
     return file_type in ('video', 'audio')
 
-def generate_thumbnail(filename):
+def is_previewable(filename):
+    _, ext = os.path.splitext(filename)
+    return ext.lower() in PREVIEWABLE_EXTENSIONS
+
+def get_preview_type(filename):
+    _, ext = os.path.splitext(filename)
+    return PREVIEWABLE_EXTENSIONS.get(ext.lower(), 'text')
+
+def get_language_class(filename):
+    _, ext = os.path.splitext(filename)
+    lang_map = {
+        '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
+        '.jsx': 'javascript', '.tsx': 'typescript',
+        '.html': 'html', '.htm': 'html', '.css': 'css',
+        '.json': 'json', '.xml': 'xml', '.yaml': 'yaml', '.yml': 'yaml',
+        '.toml': 'toml', '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash',
+        '.fish': 'bash', '.sql': 'sql', '.rb': 'ruby', '.go': 'go',
+        '.rs': 'rust', '.java': 'java', '.c': 'c', '.cpp': 'cpp',
+        '.h': 'c', '.hpp': 'cpp', '.php': 'php', '.r': 'r',
+        '.lua': 'lua', '.swift': 'swift', '.kt': 'kotlin',
+        '.scala': 'scala', '.groovy': 'groovy', '.gradle': 'groovy',
+        '.bat': 'bat', '.ps1': 'powershell',
+        '.vue': 'html', '.svelte': 'html', '.astro': 'html',
+        '.tex': 'latex', '.md': 'markdown', '.mdx': 'markdown',
+        '.rst': 'markdown', '.csv': 'csv',
+    }
+    return lang_map.get(ext.lower(), '')
+
+# ─── Media Metadata ───────────────────────────────────────────────────────────
+
+_METADATA_CACHE = {}
+_METADATA_CACHE_MAX = 200
+
+def get_media_metadata(filename):
+    abs_path = resolve_media_path(filename)
+    if abs_path is None or not os.path.isfile(abs_path):
+        return None
+
+    key = os.path.abspath(abs_path)
+    cached = _METADATA_CACHE.get(key)
+    if cached:
+        return cached
+
+    meta = {"filename": os.path.basename(abs_path)}
+    ext = os.path.splitext(abs_path)[1].lower()
+    img_exts = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.avif'}
+    video_exts = {'.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v', '.ts', '.mts'}
+
+    stat = os.stat(abs_path)
+    meta["size"] = stat.st_size
+    meta["modified"] = datetime.fromtimestamp(stat.st_mtime).isoformat()
+
+    if ext in img_exts:
+        try:
+            from PIL import Image
+            with Image.open(abs_path) as img:
+                meta["width"] = img.width
+                meta["height"] = img.height
+                meta["format"] = img.format
+                meta["mode"] = img.mode
+        except Exception:
+            pass
+    elif ext in video_exts or ext == '.mp3':
+        try:
+            result = subprocess.run(
+                ['ffprobe', '-v', 'quiet', '-print_format', 'json',
+                 '-show_format', '-show_streams', abs_path],
+                capture_output=True, text=True, timeout=15
+            )
+            data = json.loads(result.stdout)
+            fmt = data.get("format", {})
+            streams = data.get("streams", [])
+            meta["duration"] = float(fmt.get("duration", 0))
+            meta["bitrate"] = int(fmt.get("bit_rate", 0))
+            for s in streams:
+                codec_type = s.get("codec_type")
+                if codec_type == "video" and "width" not in meta:
+                    meta["width"] = s.get("width")
+                    meta["height"] = s.get("height")
+                    meta["video_codec"] = s.get("codec_name")
+                    meta["video_codec_long"] = s.get("codec_long_name")
+                elif codec_type == "audio" and "audio_codec" not in meta:
+                    meta["audio_codec"] = s.get("codec_name")
+                    meta["audio_channels"] = s.get("channels")
+                    meta["sample_rate"] = s.get("sample_rate")
+        except Exception:
+            pass
+
+    if len(_METADATA_CACHE) >= _METADATA_CACHE_MAX:
+        _METADATA_CACHE.clear()
+    _METADATA_CACHE[key] = meta
+    return meta
+
+
+_thumbnail_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumb")
+_thumbnail_pending = set()
+_thumbnail_failed = set()
+_thumbnail_lock = threading.Lock()
+
+
+def _generate_thumbnail_task(filename, source_path, thumb_rel, dest_path, thumb_dir):
     try:
-        source_path = resolve_media_path(filename)
-        if source_path is None:
-            return None
-
-        basename = os.path.basename(filename)
-        thumbnail_filename = f"{os.path.splitext(basename)[0]}.jpg"
-
-        rel_dir = os.path.dirname(filename)
-        if rel_dir:
-            thumb_dir = os.path.join(config.THUMBNAIL_FOLDER, rel_dir)
-            thumb_rel = os.path.join(rel_dir, thumbnail_filename)
-        else:
-            thumb_dir = config.THUMBNAIL_FOLDER
-            thumb_rel = thumbnail_filename
-
-        dest_path = os.path.join(config.THUMBNAIL_FOLDER, thumb_rel)
-
-        if os.path.exists(dest_path):
-            return thumb_rel
-
         os.makedirs(thumb_dir, exist_ok=True)
-
         command = [
             'ffmpeg', '-i', source_path, '-ss', '00:00:01.000',
             '-vframes', '1', '-y', dest_path, '-loglevel', 'error'
         ]
-
         subprocess.run(command, check=True)
-
-        return thumb_rel
+        with _thumbnail_lock:
+            _thumbnail_pending.discard(filename)
+        return True
     except Exception as e:
+        with _thumbnail_lock:
+            _thumbnail_pending.discard(filename)
+            _thumbnail_failed.add(filename)
         console.print(f"[bold yellow]Warning:[/bold yellow] Could not generate thumbnail for '{filename}'. Reason: {e}")
+        return False
+
+
+def generate_thumbnail(filename):
+    source_path = resolve_media_path(filename)
+    if source_path is None:
         return None
+
+    basename = os.path.basename(filename)
+    thumbnail_filename = f"{os.path.splitext(basename)[0]}.jpg"
+
+    rel_dir = os.path.dirname(filename)
+    if rel_dir:
+        thumb_dir = os.path.join(config.THUMBNAIL_FOLDER, rel_dir)
+        thumb_rel = os.path.join(rel_dir, thumbnail_filename)
+    else:
+        thumb_dir = config.THUMBNAIL_FOLDER
+        thumb_rel = thumbnail_filename
+
+    dest_path = os.path.join(config.THUMBNAIL_FOLDER, thumb_rel)
+
+    if os.path.exists(dest_path):
+        return thumb_rel
+
+    with _thumbnail_lock:
+        if filename in _thumbnail_pending or filename in _thumbnail_failed:
+            return None
+        _thumbnail_pending.add(filename)
+
+    _thumbnail_executor.submit(
+        _generate_thumbnail_task, filename, source_path,
+        thumb_rel, dest_path, thumb_dir
+    )
+    return None
 
 def get_file_size(filepath):
     size_bytes = os.path.getsize(filepath)
@@ -345,12 +617,17 @@ def list_media_files(directory, relative_dir=""):
 
 def generate_file_info(entry, filepath, rel_path):
     file_type = get_file_type(entry)
+    previewable = is_previewable(entry) if file_type == 'other' else False
+    has_meta = file_type in ("video", "audio", "image")
     info = {
         "name": entry,
         "path": rel_path,
         "type": file_type,
         "size": get_file_size(filepath),
         "is_playable": is_media_playable(file_type),
+        "is_previewable": previewable,
+        "has_metadata": has_meta,
+        "preview_type": get_preview_type(entry) if previewable else None,
         "mime_type": get_mime_type(entry),
         "icon": get_file_icon(file_type),
         "thumbnail": None,
@@ -391,11 +668,11 @@ def parent_dir(relative_dir):
 @app.before_request
 def before_request_func():
     g.share_api = _share_enabled
-    exemptions = ['login', 'static', 'serve_media', 'serve_thumbnail']
+    exemptions = ['login', 'static', 'serve_media', 'serve_thumbnail', 'preview_file', 'trash_list', 'trash_restore', 'trash_empty']
     if request.endpoint in exemptions:
         return
     if config.WEBSITE_ACCESS_KEY_REQUIRED:
-        protected_endpoints = ['index', 'player', 'settings', 'upload_file', 'delete_file', 'rename_file']
+        protected_endpoints = ['index', 'player', 'settings', 'upload_file', 'delete_file', 'rename_file', 'batch_delete', 'batch_download', 'create_dir', 'move_file', 'copy_file', 'dir_tree', 'api_metadata', 'gallery_images', 'poll_changes']
         if request.endpoint in protected_endpoints:
             if session.get('authenticated'):
                 return
@@ -575,6 +852,52 @@ def _find_subtitle(filepath):
     return None
 
 
+def _try_render_markdown(text):
+    try:
+        import markdown
+        return markdown.markdown(text, extensions=['fenced_code', 'codehilite', 'tables'])
+    except ImportError:
+        return None
+
+
+@app.route('/preview/<path:filename>')
+def preview_file(filename):
+    filepath = resolve_media_path(filename)
+
+    if filepath is None or not os.path.isfile(filepath):
+        abort(404)
+
+    preview_type = get_preview_type(filename)
+    file_size = get_file_size(filepath)
+
+    if preview_type == 'pdf':
+        return render_template('preview.html', filename=filename, preview_type='pdf',
+                               content=None, language='', filepath=filename,
+                               raw_content=None, file_size=file_size)
+
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            raw = f.read()
+    except Exception:
+        abort(500)
+
+    content = raw
+    raw_content = raw
+    language = get_language_class(filename)
+
+    if preview_type == 'markdown':
+        rendered = _try_render_markdown(raw)
+        if rendered:
+            content = rendered
+            preview_type = 'rendered_markdown'
+
+    log_activity("file_preview", {"filename": filename, "preview_type": preview_type})
+
+    return render_template('preview.html', filename=filename, preview_type=preview_type,
+                           content=content, raw_content=raw_content,
+                           language=language, filepath=filename, file_size=file_size)
+
+
 @app.route('/media/<path:filename>')
 def serve_media(filename):
     filepath = resolve_media_path(filename)
@@ -599,6 +922,73 @@ def serve_thumbnail(filename):
         abort(404)
 
     return send_file(filepath)
+
+
+@app.route('/api/metadata', methods=['POST'])
+def api_metadata():
+    data = request.get_json(silent=True) or {}
+    filename = data.get("filename", "")
+    rel_dir = data.get("dir", "")
+
+    if not filename:
+        return jsonify({"error": "Filename required"}), 400
+
+    full_path = os.path.join(rel_dir, filename) if rel_dir else filename
+    meta = get_media_metadata(full_path)
+    if meta is None:
+        return jsonify({"error": "File not found"}), 404
+
+    log_activity("metadata_requested", {"filename": full_path})
+    return jsonify(meta)
+
+
+@app.route('/gallery-images')
+def gallery_images():
+    rel_dir = request.args.get("dir", "")
+    directory = safe_join(config.MEDIA_FOLDER, rel_dir) if rel_dir else config.MEDIA_FOLDER
+    if directory is None or not os.path.isdir(directory):
+        return jsonify([])
+
+    img_exts = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.avif', '.svg'}
+    images = []
+    try:
+        for entry in sorted(os.listdir(directory)):
+            ext = os.path.splitext(entry)[1].lower()
+            if ext in img_exts:
+                rel = os.path.join(rel_dir, entry) if rel_dir else entry
+                images.append({
+                    "name": entry,
+                    "path": rel,
+                    "url": url_for('serve_media', filename=rel),
+                    "thumbnail": url_for('serve_media', filename=rel),
+                })
+    except OSError:
+        pass
+    return jsonify(images)
+
+
+@app.route('/poll-changes')
+def poll_changes():
+    rel_dir = request.args.get("dir", "")
+    directory = safe_join(config.MEDIA_FOLDER, rel_dir) if rel_dir else config.MEDIA_FOLDER
+    if directory is None or not os.path.isdir(directory):
+        return jsonify({"hash": ""})
+
+    parts = []
+    try:
+        for entry in sorted(os.listdir(directory)):
+            fp = os.path.join(directory, entry)
+            try:
+                mtime = os.path.getmtime(fp)
+            except OSError:
+                mtime = 0
+            parts.append(f"{entry}:{mtime}")
+    except OSError:
+        pass
+
+    import hashlib
+    h = hashlib.sha256("|".join(parts).encode()).hexdigest()
+    return jsonify({"hash": h})
 
 
 @app.route('/api')
@@ -667,9 +1057,12 @@ def delete_file():
     if filepath is None or not os.path.isfile(filepath):
         return jsonify({"error": "File not found"}), 404
 
-    os.remove(filepath)
-    log_activity("file_deleted", {"filename": filename, "dir": relative_dir})
-    return jsonify({"success": True})
+    trash_name = _trash_file(filepath, relative_dir)
+    if not trash_name:
+        return jsonify({"error": "Failed to move file to trash"}), 500
+
+    log_activity("file_deleted", {"filename": filename, "dir": relative_dir, "trash_name": trash_name})
+    return jsonify({"success": True, "trash_name": trash_name})
 
 
 @app.route('/rename', methods=['POST'])
@@ -696,6 +1089,200 @@ def rename_file():
     os.rename(filepath, new_filepath)
     log_activity("file_renamed", {"from": filename, "to": new_name, "dir": relative_dir})
     return jsonify({"success": True})
+
+
+# ─── Trash routes ─────────────────────────────────────────────────────────────
+
+@app.route('/trash', methods=['GET'])
+def trash_list():
+    items = _list_trash()
+    return render_template('trash.html', items=items)
+
+
+@app.route('/trash/restore', methods=['POST'])
+def trash_restore():
+    trash_name = request.form.get("trash_name", "")
+    if not trash_name:
+        return jsonify({"error": "Missing trash_name"}), 400
+    if _restore_file(trash_name):
+        log_activity("file_restored", {"trash_name": trash_name})
+        return jsonify({"success": True})
+    return jsonify({"error": "Failed to restore file"}), 404
+
+
+@app.route('/trash/empty', methods=['POST'])
+def trash_empty():
+    _empty_trash()
+    log_activity("trash_emptied", {})
+    return jsonify({"success": True})
+
+
+# ─── Batch operations ─────────────────────────────────────────────────────────
+
+@app.route('/batch-delete', methods=['POST'])
+def batch_delete():
+    data = request.get_json(silent=True)
+    if not data or "files" not in data:
+        return jsonify({"error": "No files provided"}), 400
+    results = []
+    for entry in data["files"]:
+        filename = entry.get("filename", "")
+        relative_dir = entry.get("dir", "")
+        filepath = safe_join(config.MEDIA_FOLDER, relative_dir, filename) if relative_dir else safe_join(config.MEDIA_FOLDER, filename)
+        if filepath and os.path.isfile(filepath):
+            trash_name = _trash_file(filepath, relative_dir)
+            results.append({"filename": filename, "success": bool(trash_name), "trash_name": trash_name})
+        else:
+            results.append({"filename": filename, "success": False, "error": "not_found"})
+    log_activity("batch_delete", {"count": len(results)})
+    return jsonify({"results": results, "total": len(results), "succeeded": sum(1 for r in results if r["success"])})
+
+
+@app.route('/batch-download', methods=['POST'])
+def batch_download():
+    data = request.get_json(silent=True)
+    if not data or "files" not in data:
+        return jsonify({"error": "No files provided"}), 400
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for entry in data["files"]:
+            filename = entry.get("filename", "")
+            relative_dir = entry.get("dir", "")
+            filepath = safe_join(config.MEDIA_FOLDER, relative_dir, filename) if relative_dir else safe_join(config.MEDIA_FOLDER, filename)
+            if filepath and os.path.isfile(filepath):
+                arcname = os.path.join(relative_dir, filename) if relative_dir else filename
+                zf.write(filepath, arcname)
+    buf.seek(0)
+    log_activity("batch_download", {"count": len(data["files"])})
+    return send_file(buf, mimetype='application/zip', as_attachment=True, download_name='localfs-batch.zip')
+
+
+# ─── Directory and file management ────────────────────────────────────────────
+
+@app.route('/create-dir', methods=['POST'])
+def create_dir():
+    dirname = request.form.get("dirname", "").strip()
+    relative_dir = request.form.get("dir", "")
+
+    if not dirname:
+        return jsonify({"error": "Directory name required"}), 400
+
+    if not _is_valid_filename(dirname):
+        return jsonify({"error": "Invalid directory name"}), 400
+
+    parent = safe_join(config.MEDIA_FOLDER, relative_dir) if relative_dir else config.MEDIA_FOLDER
+    if parent is None:
+        return jsonify({"error": "Invalid path"}), 400
+
+    new_dir = os.path.join(parent, dirname)
+    if os.path.exists(new_dir):
+        return jsonify({"error": "Directory already exists"}), 409
+
+    try:
+        os.makedirs(new_dir, exist_ok=True)
+        log_activity("dir_created", {"dirname": dirname, "parent": relative_dir})
+        return jsonify({"success": True, "path": os.path.join(relative_dir, dirname) if relative_dir else dirname})
+    except OSError as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _is_valid_filename(name):
+    if not name or len(name) > 255:
+        return False
+    forbidden = set('/\\\0')
+    return not any(c in forbidden for c in name)
+
+
+def _list_available_dirs(base_dir):
+    dirs = []
+    try:
+        for entry in sorted(os.listdir(base_dir)):
+            full = os.path.join(base_dir, entry)
+            if os.path.isdir(full) and not entry.startswith('.'):
+                dirs.append(entry)
+    except OSError:
+        pass
+    return dirs
+
+
+@app.route('/dir-tree', methods=['GET'])
+def dir_tree():
+    current = request.args.get("dir", "")
+    base = safe_join(config.MEDIA_FOLDER, current) if current else config.MEDIA_FOLDER
+    if base is None or not os.path.isdir(base):
+        return jsonify([])
+    subdirs = _list_available_dirs(base)
+    return jsonify([{"name": d, "path": os.path.join(current, d) if current else d} for d in subdirs])
+
+
+@app.route('/move-file', methods=['POST'])
+def move_file():
+    filename = request.form.get("filename", "")
+    source_dir = request.form.get("source_dir", "")
+    target_dir = request.form.get("target_dir", "")
+
+    if not filename:
+        return jsonify({"error": "Filename required"}), 400
+
+    src = safe_join(config.MEDIA_FOLDER, source_dir, filename) if source_dir else safe_join(config.MEDIA_FOLDER, filename)
+    dst_dir = safe_join(config.MEDIA_FOLDER, target_dir) if target_dir else config.MEDIA_FOLDER
+
+    if src is None or dst_dir is None:
+        return jsonify({"error": "Invalid path"}), 400
+    if not os.path.isfile(src):
+        return jsonify({"error": "File not found"}), 404
+    if not os.path.isdir(dst_dir):
+        return jsonify({"error": "Target directory not found"}), 404
+
+    dst = os.path.join(dst_dir, filename)
+    if os.path.exists(dst):
+        base, ext = os.path.splitext(filename)
+        counter = 1
+        while os.path.exists(os.path.join(dst_dir, f"{base}_{counter}{ext}")):
+            counter += 1
+        dst = os.path.join(dst_dir, f"{base}_{counter}{ext}")
+
+    try:
+        shutil.move(src, dst)
+        log_activity("file_moved", {"filename": filename, "from": source_dir, "to": target_dir})
+        return jsonify({"success": True})
+    except OSError as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/copy-file', methods=['POST'])
+def copy_file():
+    filename = request.form.get("filename", "")
+    source_dir = request.form.get("source_dir", "")
+    target_dir = request.form.get("target_dir", "")
+
+    if not filename:
+        return jsonify({"error": "Filename required"}), 400
+
+    src = safe_join(config.MEDIA_FOLDER, source_dir, filename) if source_dir else safe_join(config.MEDIA_FOLDER, filename)
+    dst_dir = safe_join(config.MEDIA_FOLDER, target_dir) if target_dir else config.MEDIA_FOLDER
+
+    if src is None or dst_dir is None:
+        return jsonify({"error": "Invalid path"}), 400
+    if not os.path.isfile(src):
+        return jsonify({"error": "File not found"}), 404
+    if not os.path.isdir(dst_dir):
+        return jsonify({"error": "Target directory not found"}), 404
+
+    dst = os.path.join(dst_dir, filename)
+    if os.path.exists(dst):
+        base, ext = os.path.splitext(filename)
+        counter = 1
+        while os.path.exists(os.path.join(dst_dir, f"{base}_{counter}{ext}")):
+            counter += 1
+        dst = os.path.join(dst_dir, f"{base}_{counter}{ext}")
+
+    try:
+        shutil.copy2(src, dst)
+        log_activity("file_copied", {"filename": filename, "from": source_dir, "to": target_dir})
+        return jsonify({"success": True})
+    except OSError as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/login', methods=['GET', 'POST'])
