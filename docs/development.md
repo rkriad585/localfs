@@ -66,10 +66,7 @@ localfs/
 │   ├── test_main.py
 │   └── test_theme.py
 │
-├── scripts/              # Installer scripts
-│   ├── installer.sh
-│   └── installer.ps1
-│
+
 ├── docs/                 # Documentation
 ├── pyproject.toml        # Project metadata
 └── .version              # Version file

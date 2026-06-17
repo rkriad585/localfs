@@ -32,13 +32,13 @@ docker run -p 5000:5000 localfs
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rkriad585/localfs/main/scripts/installer.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rkriad585/localfs/main/installer.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/rkriad585/localfs/main/scripts/installer.ps1 | iex
+irm https://raw.githubusercontent.com/rkriad585/localfs/main/installer.ps1 | iex
 ```
 
 ## First Run

@@ -32,13 +32,13 @@ python -m localfs
 ### Install via script (Linux / macOS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rkriad585/localfs/main/scripts/installer.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rkriad585/localfs/main/installer.sh | sh
 ```
 
 ### Install via script (Windows PowerShell)
 
 ```bash
-irm https://raw.githubusercontent.com/rkriad585/localfs/main/scripts/installer.ps1 | iex
+irm https://raw.githubusercontent.com/rkriad585/localfs/main/installer.ps1 | iex
 ```
 
 Open the URL printed in the terminal to access the web interface.
