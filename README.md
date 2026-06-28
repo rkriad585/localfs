@@ -20,6 +20,12 @@ A simple, fast, and beautiful local file sharing service built with Python and F
 
 ## Quick Start
 
+### Install via pip
+
+```bash
+pip install localfs
+```
+
 ### Install from source
 
 ```bash
